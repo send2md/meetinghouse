@@ -33,9 +33,15 @@ def _Image(name="photo.jpg"):
     return (io.BytesIO(b"not really a jpeg, just test bytes"), name)
 
 
+def _Login(test_client, username, password, follow_redirects=True):
+    """Drive the two-step login: username first, then (if found) password."""
+    test_client.post("/login", data={"username": username})
+    return test_client.post("/login/password", data={"password": password}, follow_redirects=follow_redirects)
+
+
 def _Register(test_client, username, name="Jane Doe", password="correct horse battery", **overrides):
     """Drive the whole /login -> /register flow for a brand-new username."""
-    test_client.post("/login", data={"username": username, "password": "whatever"})
+    test_client.post("/login", data={"username": username})
     data = {
         "name": name,
         "password": password,
@@ -55,8 +61,27 @@ def _AdminLogin(client):
 
 def test_unknown_username_goes_straight_to_registration(client):
     test_client, _ = client
-    resp = test_client.post("/login", data={"username": "janedoe", "password": "x"}, follow_redirects=True)
+    resp = test_client.post("/login", data={"username": "janedoe"}, follow_redirects=True)
     assert b"janedoe is your login. You are a new Participant." in resp.data
+
+
+def test_login_is_two_separate_steps(client):
+    """Username and password are on separate screens, matching the sketch."""
+    test_client, _ = client
+    _Register(test_client, "janedoe")
+    test_client.get("/logout")
+
+    username_page = test_client.get("/login")
+    assert b"Emeetinghouse User Name" in username_page.data
+    assert b'name="password"' not in username_page.data  # no password field yet
+
+    step1 = test_client.post("/login", data={"username": "janedoe"})
+    assert step1.status_code == 302
+    assert step1.headers["Location"].endswith("/login/password")
+
+    password_page = test_client.get("/login/password")
+    assert b"janedoe" in password_page.data
+    assert b'name="password"' in password_page.data
 
 
 def test_full_registration_creates_a_working_login(client):
@@ -67,15 +92,13 @@ def test_full_registration_creates_a_working_login(client):
     assert b"data:image/jpeg;base64," in resp.data  # photo/thumbprint embedded for printing
 
     test_client.get("/logout")
-    login_resp = test_client.post(
-        "/login", data={"username": "janedoe", "password": "correct horse battery"}, follow_redirects=True
-    )
+    login_resp = _Login(test_client, "janedoe", "correct horse battery")
     assert b"Welcome, Jane Doe" in login_resp.data
 
 
 def test_registration_requires_all_fields(client):
     test_client, _ = client
-    test_client.post("/login", data={"username": "janedoe", "password": "x"})
+    test_client.post("/login", data={"username": "janedoe"})
     resp = test_client.post(
         "/register",
         data={"name": "", "password": "short", "address": "", "mothers_maiden_name": "", "age": "not-a-number"},
@@ -94,10 +117,15 @@ def test_known_username_wrong_password_offers_retry_or_new_login(client):
     _Register(test_client, "janedoe")
     test_client.get("/logout")
 
-    resp = test_client.post("/login", data={"username": "janedoe", "password": "nope"}, follow_redirects=True)
+    resp = _Login(test_client, "janedoe", "nope")
     assert b"that password didn" in resp.data.lower()
     assert b"I made a mistake, try again" in resp.data
     assert b"This is a new login" in resp.data
+
+    # "I made a mistake, try again" goes straight back to the password step,
+    # not all the way back to typing the username again.
+    retry = test_client.post("/login/password", data={"password": "correct horse battery"}, follow_redirects=True)
+    assert b"Welcome, Jane Doe" in retry.data
 
 
 def test_claiming_a_taken_username_offers_a_free_alternative(client):

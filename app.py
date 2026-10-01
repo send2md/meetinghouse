@@ -197,30 +197,50 @@ def Dashboard():
 
 @app.route("/login", methods=["GET", "POST"])
 def Login():
-    """Log in, or fall through to self-registration for an unrecognized login.
+    """Step one: just the Emeetinghouse User Name, nothing else yet.
 
-    A username that matches nobody is treated as free to claim (straight
-    to Register); a username that matches someone but the wrong password
-    was given goes to LoginRetry, which asks whether that was a typo or
-    a different person wanting the same login.
+    A username that matches nobody is free to claim, so there's no point
+    asking for a password at all — straight to Register. A username that
+    matches someone goes on to LoginPassword for the actual password
+    prompt, which is its own separate screen (matching the two boxes in
+    the design sketch, not one combined form).
     """
     if request.method == "POST":
         username = request.form.get("username", "").strip()
+        if not username:
+            flash("Enter a login.")
+            return render_template("login.html")
+        row = persistence.GetCredentialsByUsername(conn, username)
+        if row is None:
+            session["pending_username"] = username
+            return redirect(url_for("Register"))
+        session["login_username"] = username
+        return redirect(url_for("LoginPassword"))
+    return render_template("login.html")
+
+
+@app.route("/login/password", methods=["GET", "POST"])
+def LoginPassword():
+    """Step two, only reached once Login has confirmed the username exists."""
+    username = session.get("login_username")
+    if not username:
+        return redirect(url_for("Login"))
+
+    if request.method == "POST":
         password = request.form.get("password", "")
         row = persistence.GetCredentialsByUsername(conn, username)
         if row is not None and check_password_hash(row["password_hash"], password):
             participant = house.participants.get(row["participant_id"])
             if participant is None or not participant.IsParticipant(Now()):
                 flash("Your participation form has lapsed. Please send a fresh one.")
-                return render_template("login.html")
+                return render_template("login_password.html", username=username)
+            session.pop("login_username", None)
             session["participant_id"] = participant.id
             flash(f"Welcome, {participant.name}.")
             return redirect(request.args.get("next") or url_for("Dashboard"))
-        if row is not None:
-            return render_template("login_retry.html", username=username)
-        session["pending_username"] = username
-        return redirect(url_for("Register"))
-    return render_template("login.html")
+        return render_template("login_retry.html", username=username)
+
+    return render_template("login_password.html", username=username)
 
 
 @app.route("/logout")

@@ -6,8 +6,7 @@
   <p>There's already a Participant logging in as <strong>{{ username }}</strong>, but
     that password didn't match.</p>
 
-  <form method="post" action="{{ url_for('Login') }}">
-    <input type="hidden" name="username" value="{{ username }}">
+  <form method="post" action="{{ url_for('LoginPassword') }}">
     <label>Password</label>
     <input type="password" name="password" required autofocus>
     <p><input type="submit" value="I made a mistake, try again"></p>
