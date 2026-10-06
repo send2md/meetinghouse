@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Log in — Emeetinghouse{% endblock %}
+{% block title %}Log in — Meetinghouse{% endblock %}
 {% block content %}
 <div class="card" style="max-width:360px;margin:2rem auto;">
   <h1>Log in</h1>
   <form method="post" action="{{ url_for('Login') }}">
-    <label>Emeetinghouse User Name</label>
+    <label>Meetinghouse User Name</label>
     <input type="text" name="username" required autofocus>
     <p><input type="submit" value="Log in"></p>
   </form>

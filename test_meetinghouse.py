@@ -1,16 +1,16 @@
-"""Tests for emeetinghouse.py, one per Rule in the design spec.
+"""Tests for meetinghouse.py, one per Rule in the design spec.
 
-Run with `python -m pytest test_emeetinghouse.py -v`, or run this file
+Run with `python -m pytest test_meetinghouse.py -v`, or run this file
 directly and it will execute every test itself, with no dependency on
 pytest being installed.
 """
 
 import datetime as dt
 
-from emeetinghouse import (
+from meetinghouse import (
     Dismissal,
     InvalidTopic,
-    Emeetinghouse,
+    Meetinghouse,
     NotAParticipant,
     ParticipantDismissed,
     PollResult,
@@ -28,8 +28,8 @@ def Days(count):
 
 
 def CreateHouseWithParticipants(count=8, now=START):
-    """Build an Emeetinghouse with `count` Participants, each freshly signed."""
-    house = Emeetinghouse()
+    """Build an Meetinghouse with `count` Participants, each freshly signed."""
+    house = Meetinghouse()
     people = [house.RegisterParticipant(f"Participant {i}") for i in range(count)]
     for person in people:
         person.SignForm(signed_date=now.date() - Days(1))
@@ -37,7 +37,7 @@ def CreateHouseWithParticipants(count=8, now=START):
 
 
 def test_form_expires_after_a_year():
-    house = Emeetinghouse()
+    house = Meetinghouse()
     alice = house.RegisterParticipant("Alice")
     alice.SignForm(signed_date=START.date())
     assert alice.IsParticipant(START + Days(300))
@@ -45,7 +45,7 @@ def test_form_expires_after_a_year():
 
 
 def test_cannot_act_without_current_form():
-    house = Emeetinghouse()
+    house = Meetinghouse()
     alice = house.RegisterParticipant("Alice")
     try:
         house.CreateTopic(alice.id, Subsection.FORUM, "Buy new chairs", START)

@@ -1,4 +1,4 @@
-"""The close-and-persist flow behind Emeetinghouse.Tick().
+"""The close-and-persist flow behind Meetinghouse.Tick().
 
 Factored out of app.py so it can run two ways in production: inside
 the Flask process on hosts that can keep a background thread alive,
@@ -10,7 +10,7 @@ control and a thread inside it can't be relied on to keep running.
 from __future__ import annotations
 
 import persistence
-from emeetinghouse import PollResult, Subsection
+from meetinghouse import PollResult, Subsection
 
 
 def RunTick(house, conn, now):

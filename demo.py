@@ -7,7 +7,7 @@ Run: python3 demo.py, or ./demo.py if this file is executable.
 
 import datetime as dt
 
-from emeetinghouse import Emeetinghouse, RuleConfig, Subsection, VoteChoice
+from meetinghouse import Meetinghouse, RuleConfig, Subsection, VoteChoice
 
 START = dt.datetime(2026, 1, 1, 9, 0, 0)
 
@@ -18,8 +18,8 @@ def PrintDivider():
 
 
 def BuildHouse():
-    """Create an Emeetinghouse with four freshly signed Participants."""
-    house = Emeetinghouse()
+    """Create an Meetinghouse with four freshly signed Participants."""
+    house = Meetinghouse()
     alice = house.RegisterParticipant("Alice")
     bob = house.RegisterParticipant("Bob")
     carol = house.RegisterParticipant("Carol")

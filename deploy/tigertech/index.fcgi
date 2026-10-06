@@ -1,10 +1,10 @@
-#!/home/USERNAME/emeetinghouse/venv/bin/python3
+#!/home/USERNAME/meetinghouse/venv/bin/python3
 """FastCGI entry point for TigerTech shared hosting.
 
 Deploy layout:
   ~/html/index.fcgi         <- this file (the only app file inside the web root)
   ~/html/.htaccess          <- rewrites all requests to index.fcgi
-  ~/emeetinghouse/          <- app.py, persistence.py, tick_runner.py,
+  ~/meetinghouse/          <- app.py, persistence.py, tick_runner.py,
                                 templates/, static/, config.py, data/
                                 (outside the web root: never downloadable)
 
@@ -16,7 +16,7 @@ username (APP_DIR resolves itself via the home directory), then:
 import os
 import sys
 
-APP_DIR = os.path.expanduser("~/emeetinghouse")
+APP_DIR = os.path.expanduser("~/meetinghouse")
 sys.path.insert(0, APP_DIR)
 
 import config  # noqa: E402  (sets os.environ; see config.example.py)

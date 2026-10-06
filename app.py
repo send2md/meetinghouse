@@ -1,9 +1,9 @@
 """Web front end for the Meetinghouse engine.
 
-This module owns everything emeetinghouse.py deliberately does not:
+This module owns everything meetinghouse.py deliberately does not:
 wall-clock time, HTTP, sessions/login, and calling into persistence.py
 after each mutation. The single in-process `house` is the same
-Emeetinghouse object the engine's tests exercise; this file just feeds
+Meetinghouse object the engine's tests exercise; this file just feeds
 it real time and real people, and keeps SQLite in sync.
 """
 
@@ -20,26 +20,26 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import persistence
 import tick_runner
-from emeetinghouse import (
-    EmeetinghouseError,
+from meetinghouse import (
+    MeetinghouseError,
     Subsection,
     VoteChoice,
 )
 
-DB_PATH = os.environ.get("EMEETINGHOUSE_DB", os.path.join(os.path.dirname(__file__), "emeetinghouse.db"))
-ADMIN_PASSWORD = os.environ.get("EMEETINGHOUSE_ADMIN_PASSWORD", "admin")
-TICK_INTERVAL_SECONDS = int(os.environ.get("EMEETINGHOUSE_TICK_SECONDS", "300"))
+DB_PATH = os.environ.get("MEETINGHOUSE_DB", os.path.join(os.path.dirname(__file__), "meetinghouse.db"))
+ADMIN_PASSWORD = os.environ.get("MEETINGHOUSE_ADMIN_PASSWORD", "admin")
+TICK_INTERVAL_SECONDS = int(os.environ.get("MEETINGHOUSE_TICK_SECONDS", "300"))
 
 # Self-registration uploads (photo + thumbprint) live outside ~/html, next to
 # the SQLite file, so they're never web-accessible except through the
 # admin-gated AdminParticipantImage route below.
-UPLOAD_DIR = os.environ.get("EMEETINGHOUSE_UPLOADS", os.path.join(os.path.dirname(DB_PATH), "uploads"))
+UPLOAD_DIR = os.environ.get("MEETINGHOUSE_UPLOADS", os.path.join(os.path.dirname(DB_PATH), "uploads"))
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg"}
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("EMEETINGHOUSE_SECRET_KEY", "dev-secret-change-me")
+app.secret_key = os.environ.get("MEETINGHOUSE_SECRET_KEY", "dev-secret-change-me")
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # cap uploads (photo + thumbprint) at 8 MB total
 
 LOCK = threading.Lock()
@@ -197,7 +197,7 @@ def Dashboard():
 
 @app.route("/login", methods=["GET", "POST"])
 def Login():
-    """Step one: just the Emeetinghouse User Name, nothing else yet.
+    """Step one: just the Meetinghouse User Name, nothing else yet.
 
     A username that matches nobody is free to claim, so there's no point
     asking for a password at all — straight to Register. A username that
@@ -430,7 +430,7 @@ def NewTopic(name):
                 )
                 persistence.SaveTopic(conn, topic)
                 FlushNewEvents(prev_len)
-        except EmeetinghouseError as exc:
+        except MeetinghouseError as exc:
             flash(str(exc))
             return render_template("new_topic.html", subsection=subsection, participants=other_participants)
 
@@ -452,7 +452,7 @@ def _BuildProposedRule(current, form):
             return fallback
         return float(raw)
 
-    from emeetinghouse import RuleConfig
+    from meetinghouse import RuleConfig
 
     quiet_time = _weeks("quiet_time_weeks", current.quiet_time)
     min_life = _weeks("min_life_weeks", current.min_life)
@@ -486,7 +486,7 @@ def TopicDetail(topic_id):
             try:
                 house.MarkRead(topic_id, g.participant.id, now)
                 persistence.SaveTopic(conn, topic)
-            except EmeetinghouseError:
+            except MeetinghouseError:
                 pass
 
     comments = []
@@ -531,7 +531,7 @@ def CastVote(topic_id):
             house.CastVote(topic_id, g.participant.id, choice, comment, Now())
             persistence.SaveTopic(conn, topic)
             FlushNewEvents(prev_len)
-    except EmeetinghouseError as exc:
+    except MeetinghouseError as exc:
         flash(str(exc))
     return redirect(url_for("TopicDetail", topic_id=topic_id))
 
@@ -548,7 +548,7 @@ def Revoke(topic_id):
             house.RevokeVote(topic_id, g.participant.id, Now())
             persistence.SaveTopic(conn, topic)
             FlushNewEvents(prev_len)
-    except EmeetinghouseError as exc:
+    except MeetinghouseError as exc:
         flash(str(exc))
     return redirect(url_for("TopicDetail", topic_id=topic_id))
 
@@ -663,9 +663,9 @@ def AdminLogout():
 if __name__ == "__main__":
     if ADMIN_PASSWORD == "admin":
         app.logger.warning(
-            "EMEETINGHOUSE_ADMIN_PASSWORD not set; using the insecure default 'admin'. "
+            "MEETINGHOUSE_ADMIN_PASSWORD not set; using the insecure default 'admin'. "
             "Set it before exposing this app beyond localhost."
         )
     if os.environ.get("WERKZEUG_RUN_MAIN") != "true" or not app.debug:
         StartScheduler()
-    app.run(debug=os.environ.get("EMEETINGHOUSE_DEBUG") == "1", host=os.environ.get("EMEETINGHOUSE_HOST", "127.0.0.1"), port=int(os.environ.get("EMEETINGHOUSE_PORT", "5000")))
+    app.run(debug=os.environ.get("MEETINGHOUSE_DEBUG") == "1", host=os.environ.get("MEETINGHOUSE_HOST", "127.0.0.1"), port=int(os.environ.get("MEETINGHOUSE_PORT", "5000")))

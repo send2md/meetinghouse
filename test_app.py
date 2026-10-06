@@ -16,10 +16,10 @@ import pytest
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("EMEETINGHOUSE_DB", str(tmp_path / "test.db"))
-    monkeypatch.setenv("EMEETINGHOUSE_ADMIN_PASSWORD", "test-admin-password")
-    monkeypatch.setenv("EMEETINGHOUSE_SECRET_KEY", "test-secret-key")
-    monkeypatch.setenv("EMEETINGHOUSE_UPLOADS", str(tmp_path / "uploads"))
+    monkeypatch.setenv("MEETINGHOUSE_DB", str(tmp_path / "test.db"))
+    monkeypatch.setenv("MEETINGHOUSE_ADMIN_PASSWORD", "test-admin-password")
+    monkeypatch.setenv("MEETINGHOUSE_SECRET_KEY", "test-secret-key")
+    monkeypatch.setenv("MEETINGHOUSE_UPLOADS", str(tmp_path / "uploads"))
 
     import app as app_module
 
@@ -72,7 +72,7 @@ def test_login_is_two_separate_steps(client):
     test_client.get("/logout")
 
     username_page = test_client.get("/login")
-    assert b"Emeetinghouse User Name" in username_page.data
+    assert b"Meetinghouse User Name" in username_page.data
     assert b'name="password"' not in username_page.data  # no password field yet
 
     step1 = test_client.post("/login", data={"username": "janedoe"})

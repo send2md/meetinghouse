@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{% block title %}Emeetinghouse{% endblock %}</title>
+  <title>{% block title %}Meetinghouse{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <header class="site">
-    <span class="brand">🕊 Emeetinghouse</span>
+    <span class="brand">🕊 Meetinghouse</span>
     {% if current_participant %}
     <nav>
       <a href="{{ url_for('Dashboard') }}">Dashboard</a>
