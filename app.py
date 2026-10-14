@@ -12,13 +12,29 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import os
+import secrets
 import sqlite3
 import threading
 
-from flask import Flask, abort, flash, g, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from webauthn import (
+    generate_authentication_options,
+    generate_registration_options,
+    options_to_json,
+    verify_authentication_response,
+    verify_registration_response,
+)
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
+from webauthn.helpers.structs import (
+    AuthenticatorSelectionCriteria,
+    PublicKeyCredentialDescriptor,
+    ResidentKeyRequirement,
+    UserVerificationRequirement,
+)
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import persistence
+import security
 import tick_runner
 from meetinghouse import (
     MeetinghouseError,
@@ -41,6 +57,12 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 app = Flask(__name__)
 app.secret_key = os.environ.get("MEETINGHOUSE_SECRET_KEY", "dev-secret-change-me")
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # cap uploads (photo + thumbprint) at 8 MB total
+# Session cookies: never readable by page scripts, not sent along with
+# requests started by other sites, and (on the live HTTPS site, where
+# config.py sets MEETINGHOUSE_SECURE_COOKIES=1) never sent over plain HTTP.
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("MEETINGHOUSE_SECURE_COOKIES") == "1"
 
 LOCK = threading.Lock()
 conn = persistence.Connect(DB_PATH)
@@ -50,6 +72,10 @@ house = persistence.LoadHouse(conn)
 def Now():
     """The one place this app reads the wall clock, so it stays swappable."""
     return dt.datetime.utcnow()
+
+
+security.InitSchema(conn)
+security.EnsureStatusRows(conn, house, Now())
 
 
 def FlushNewEvents(prev_len):
@@ -192,7 +218,14 @@ def Dashboard():
         )
     for items in open_by_subsection.values():
         items.sort(key=lambda item: item["topic"].created_at)
-    return render_template("dashboard.html", open_by_subsection=open_by_subsection, now=now)
+    return render_template(
+        "dashboard.html",
+        open_by_subsection=open_by_subsection,
+        now=now,
+        activated=security.IsActivated(conn, g.participant.id),
+        pending_code=security.PendingCode(conn, g.participant.id),
+        has_passkey=security.HasPasskeys(conn, g.participant.id),
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -215,8 +248,48 @@ def Login():
             session["pending_username"] = username
             return redirect(url_for("Register"))
         session["login_username"] = username
+        if security.HasPasskeys(conn, row["participant_id"]):
+            return redirect(url_for("LoginPasskey"))
         return redirect(url_for("LoginPassword"))
     return render_template("login.html")
+
+
+def _UserKey(username):
+    """The login_throttle key for one account."""
+    return f"user:{username}"
+
+
+def _LockedMessage(until):
+    minutes = max(1, int((until - Now()).total_seconds() // 60) + 1)
+    return f"Too many wrong tries. For safety, this login is paused for about {minutes} more minute(s)."
+
+
+def _LoginBlockedReason(participant):
+    """Why this (correctly identified) person still can't log in, if anything.
+
+    Someone still waiting for their activation letter CAN log in — they
+    need to, to type in the code — they just can't take part until then.
+    """
+    if participant is None:
+        return "That account no longer exists."
+    if security.IsActivated(conn, participant.id) and not participant.IsParticipant(Now()):
+        return "Your participation form has lapsed. Please send a fresh one."
+    return None
+
+
+def _CompleteLogin(participant, username):
+    session.pop("login_username", None)
+    session.pop("pending_username", None)
+    session["participant_id"] = participant.id
+    security.ClearFailures(conn, _UserKey(username))
+
+
+def _Activate(participant):
+    """Activation counts as signing the participation form, as registering used to."""
+    with LOCK:
+        security.MarkActivated(conn, participant.id, Now())
+        participant.SignForm(signed_date=Now().date())
+        persistence.SaveParticipant(conn, participant)
 
 
 @app.route("/login/password", methods=["GET", "POST"])
@@ -226,21 +299,39 @@ def LoginPassword():
     if not username:
         return redirect(url_for("Login"))
 
+    row = persistence.GetCredentialsByUsername(conn, username)
+    if row is not None and security.HasPasskeys(conn, row["participant_id"]):
+        # Once someone has a passkey, their password no longer logs them in.
+        return redirect(url_for("LoginPasskey"))
+
     if request.method == "POST":
+        locked = security.LockedUntil(conn, _UserKey(username), Now())
+        if locked:
+            flash(_LockedMessage(locked))
+            return render_template("login_password.html", username=username)
         password = request.form.get("password", "")
-        row = persistence.GetCredentialsByUsername(conn, username)
         if row is not None and check_password_hash(row["password_hash"], password):
             participant = house.participants.get(row["participant_id"])
-            if participant is None or not participant.IsParticipant(Now()):
-                flash("Your participation form has lapsed. Please send a fresh one.")
+            reason = _LoginBlockedReason(participant)
+            if reason:
+                flash(reason)
                 return render_template("login_password.html", username=username)
-            session.pop("login_username", None)
-            session["participant_id"] = participant.id
+            _CompleteLogin(participant, username)
             flash(f"Welcome, {participant.name}.")
-            return redirect(request.args.get("next") or url_for("Dashboard"))
+            return redirect(_SafeNext() or url_for("Dashboard"))
+        locked = security.RecordFailure(conn, _UserKey(username), Now())
+        if locked:
+            flash(_LockedMessage(locked))
+            return render_template("login_password.html", username=username)
         return render_template("login_retry.html", username=username)
 
     return render_template("login_password.html", username=username)
+
+
+def _SafeNext():
+    """A ?next= target, but only a path on this site (never another site)."""
+    target = request.args.get("next") or ""
+    return target if target.startswith("/") and not target.startswith("//") else None
 
 
 @app.route("/logout")
@@ -327,8 +418,10 @@ def Register():
                     "username_taken.html", taken_username=username, suggestion=_SuggestUsername(username)
                 )
             participant = house.RegisterParticipant(name)
-            participant.SignForm(signed_date=Now().date())
+            # No form is signed yet: that happens when they type in the code
+            # from the activation letter mailed to the address below.
             persistence.SaveParticipant(conn, participant)
+            security.CreatePendingStatus(conn, participant.id)
             try:
                 persistence.SetCredentials(
                     conn, participant.id, username, generate_password_hash(password, method="pbkdf2:sha256")
@@ -360,6 +453,258 @@ def Register():
         )
 
     return render_template("register.html", username=username)
+
+
+# --- Mailed codes, passkeys and the Account page ------------------------------
+
+
+def _RpId():
+    """The passkey "relying party": the site's domain, e.g. meetinghouse.ai."""
+    return os.environ.get("MEETINGHOUSE_RP_ID") or request.host.split(":")[0]
+
+
+def _Origins():
+    """Web addresses passkeys may be used from (config.py sets the live ones)."""
+    raw = os.environ.get("MEETINGHOUSE_ORIGINS", "")
+    origins = [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
+    return origins or [request.host_url.rstrip("/")]
+
+
+def _SiteAddress():
+    return _Origins()[0]
+
+
+@app.route("/login/code", methods=["GET", "POST"])
+def LoginCode():
+    """Log in (and activate, or recover) with the one-time code from a letter."""
+    username = session.get("login_username")
+    if not username:
+        return redirect(url_for("Login"))
+    row = persistence.GetCredentialsByUsername(conn, username)
+    if row is None:
+        return redirect(url_for("Login"))
+
+    if request.method == "POST":
+        key = _UserKey(username)
+        locked = security.LockedUntil(conn, key, Now())
+        if locked:
+            flash(_LockedMessage(locked))
+            return render_template("login_code.html", username=username)
+        participant = house.participants.get(row["participant_id"])
+        purpose = security.RedeemCode(conn, row["participant_id"], request.form.get("code", ""), Now())
+        if purpose is None or participant is None:
+            locked = security.RecordFailure(conn, key, Now())
+            flash(_LockedMessage(locked) if locked else "That code didn't match. Check the letter and try again.")
+            return render_template("login_code.html", username=username)
+        if purpose == security.ACTIVATION and not security.IsActivated(conn, participant.id):
+            _Activate(participant)
+        reason = _LoginBlockedReason(participant)
+        if reason:
+            flash(reason)
+            return render_template("login_code.html", username=username)
+        _CompleteLogin(participant, username)
+        if purpose == security.ACTIVATION:
+            flash(f"Welcome, {participant.name}. Your account is activated.")
+        else:
+            flash(f"Welcome back, {participant.name}.")
+        flash("Next, add a passkey below so that only you can log in from now on.")
+        return redirect(url_for("Account"))
+
+    return render_template("login_code.html", username=username)
+
+
+@app.route("/login/passkey")
+def LoginPasskey():
+    username = session.get("login_username")
+    if not username:
+        return redirect(url_for("Login"))
+    return render_template("login_passkey.html", username=username)
+
+
+@app.route("/login/passkey/options", methods=["POST"])
+def LoginPasskeyOptions():
+    username = session.get("login_username")
+    row = persistence.GetCredentialsByUsername(conn, username) if username else None
+    if row is None:
+        return jsonify(error="Start again from the login page."), 400
+    passkeys = security.ListPasskeys(conn, row["participant_id"])
+    if not passkeys:
+        return jsonify(error="This account has no passkey yet."), 400
+    options = generate_authentication_options(
+        rp_id=_RpId(),
+        allow_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(p["credential_id"])) for p in passkeys],
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+    session["passkey_login_challenge"] = bytes_to_base64url(options.challenge)
+    return app.response_class(options_to_json(options), mimetype="application/json")
+
+
+@app.route("/login/passkey/verify", methods=["POST"])
+def LoginPasskeyVerify():
+    username = session.get("login_username")
+    challenge = session.pop("passkey_login_challenge", None)
+    row = persistence.GetCredentialsByUsername(conn, username) if username else None
+    if row is None or challenge is None:
+        return jsonify(error="Start again from the login page."), 400
+    credential = (request.get_json(silent=True) or {}).get("credential") or {}
+    stored = security.GetPasskey(conn, str(credential.get("id", "")))
+    if stored is None or stored["participant_id"] != row["participant_id"]:
+        return jsonify(error="That passkey isn't registered for this account."), 400
+    try:
+        verified = verify_authentication_response(
+            credential=credential,
+            expected_challenge=base64url_to_bytes(challenge),
+            expected_rp_id=_RpId(),
+            expected_origin=_Origins(),
+            credential_public_key=stored["public_key"],
+            credential_current_sign_count=stored["sign_count"],
+            require_user_verification=True,
+        )
+    except Exception as exc:  # any verification failure means: not let in
+        app.logger.info("Passkey login refused for %s: %s", username, exc)
+        return jsonify(error="That passkey couldn't be verified. Please try again."), 400
+    participant = house.participants.get(row["participant_id"])
+    reason = _LoginBlockedReason(participant)
+    if reason:
+        return jsonify(error=reason), 403
+    security.TouchPasskey(conn, stored["credential_id"], verified.new_sign_count, Now())
+    _CompleteLogin(participant, username)
+    flash(f"Welcome, {participant.name}.")
+    return jsonify(ok=True, redirect=url_for("Dashboard"))
+
+
+@app.route("/account")
+def Account():
+    guard = RequireLogin()
+    if guard:
+        return guard
+    participant_id = g.participant.id
+    creds = persistence.GetCredentialsForParticipant(conn, participant_id)
+    return render_template(
+        "account.html",
+        username=creds["username"] if creds else "",
+        activated=security.IsActivated(conn, participant_id),
+        pending_code=security.PendingCode(conn, participant_id),
+        passkeys=security.ListPasskeys(conn, participant_id),
+        has_password=bool(creds) and creds["password_hash"] != security.NO_PASSWORD,
+    )
+
+
+@app.route("/account/activate", methods=["POST"])
+def AccountActivate():
+    guard = RequireLogin()
+    if guard:
+        return guard
+    creds = persistence.GetCredentialsForParticipant(conn, g.participant.id)
+    key = _UserKey(creds["username"])
+    locked = security.LockedUntil(conn, key, Now())
+    if locked:
+        flash(_LockedMessage(locked))
+        return redirect(request.referrer or url_for("Account"))
+    purpose = security.RedeemCode(conn, g.participant.id, request.form.get("code", ""), Now())
+    if purpose is None:
+        locked = security.RecordFailure(conn, key, Now())
+        flash(_LockedMessage(locked) if locked else "That code didn't match. Check the letter and try again.")
+        return redirect(request.referrer or url_for("Account"))
+    security.ClearFailures(conn, key)
+    if not security.IsActivated(conn, g.participant.id):
+        _Activate(g.participant)
+    flash("Your account is activated. Next, add a passkey so that only you can log in.")
+    return redirect(url_for("Account"))
+
+
+@app.route("/account/passkey/options", methods=["POST"])
+def PasskeyRegisterOptions():
+    if g.participant is None:
+        return jsonify(error="Please log in first."), 401
+    creds = persistence.GetCredentialsForParticipant(conn, g.participant.id)
+    options = generate_registration_options(
+        rp_id=_RpId(),
+        rp_name="Meetinghouse",
+        user_id=g.participant.id.encode("utf-8"),
+        user_name=creds["username"],
+        user_display_name=g.participant.name,
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.PREFERRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+        exclude_credentials=[
+            PublicKeyCredentialDescriptor(id=base64url_to_bytes(p["credential_id"]))
+            for p in security.ListPasskeys(conn, g.participant.id)
+        ],
+    )
+    session["passkey_register_challenge"] = bytes_to_base64url(options.challenge)
+    return app.response_class(options_to_json(options), mimetype="application/json")
+
+
+@app.route("/account/passkey/verify", methods=["POST"])
+def PasskeyRegisterVerify():
+    if g.participant is None:
+        return jsonify(error="Please log in first."), 401
+    challenge = session.pop("passkey_register_challenge", None)
+    if challenge is None:
+        return jsonify(error="Please start again."), 400
+    body = request.get_json(silent=True) or {}
+    try:
+        verified = verify_registration_response(
+            credential=body.get("credential") or {},
+            expected_challenge=base64url_to_bytes(challenge),
+            expected_rp_id=_RpId(),
+            expected_origin=_Origins(),
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        app.logger.info("Passkey registration refused: %s", exc)
+        return jsonify(error="That passkey couldn't be set up. Please try again."), 400
+    label = str(body.get("label") or "").strip()[:60] or f"Passkey added {Now():%Y-%m-%d}"
+    security.AddPasskey(
+        conn,
+        g.participant.id,
+        bytes_to_base64url(verified.credential_id),
+        verified.credential_public_key,
+        verified.sign_count,
+        label,
+        Now(),
+    )
+    flash(f"Passkey “{label}” added. From now on you log in with it; your password no longer works.")
+    return jsonify(ok=True, redirect=url_for("Account"))
+
+
+@app.route("/account/passkey/remove", methods=["POST"])
+def PasskeyRemove():
+    guard = RequireLogin()
+    if guard:
+        return guard
+    security.RemovePasskey(conn, g.participant.id, request.form.get("credential_id", ""))
+    if security.HasPasskeys(conn, g.participant.id):
+        flash("Passkey removed.")
+    else:
+        flash("Passkey removed. You have no passkeys left, so your password logs you in again.")
+    return redirect(url_for("Account"))
+
+
+@app.route("/account/password", methods=["POST"])
+def AccountPassword():
+    """Set a new password — only meaningful while the account has no passkey."""
+    guard = RequireLogin()
+    if guard:
+        return guard
+    if security.HasPasskeys(conn, g.participant.id):
+        flash("You log in with a passkey, so there's no password to change.")
+        return redirect(url_for("Account"))
+    password = request.form.get("password", "")
+    if len(password) < 8:
+        flash("Password must be at least 8 characters.")
+        return redirect(url_for("Account"))
+    if password != request.form.get("confirm", ""):
+        flash("The two passwords didn't match.")
+        return redirect(url_for("Account"))
+    creds = persistence.GetCredentialsForParticipant(conn, g.participant.id)
+    persistence.SetCredentials(
+        conn, g.participant.id, creds["username"], generate_password_hash(password, method="pbkdf2:sha256")
+    )
+    flash("New password saved.")
+    return redirect(url_for("Account"))
 
 
 @app.route("/subsection/<name>")
@@ -575,10 +920,16 @@ def Summary():
 @app.route("/admin/login", methods=["GET", "POST"])
 def AdminLogin():
     if request.method == "POST":
-        if request.form.get("password") == ADMIN_PASSWORD:
+        locked = security.LockedUntil(conn, "admin", Now())
+        if locked:
+            flash(_LockedMessage(locked))
+            return render_template("admin_login.html")
+        if secrets.compare_digest(request.form.get("password", "").encode(), ADMIN_PASSWORD.encode()):
+            security.ClearFailures(conn, "admin")
             session["is_admin"] = True
             return redirect(url_for("Admin"))
-        flash("Incorrect admin password.")
+        locked = security.RecordFailure(conn, "admin", Now())
+        flash(_LockedMessage(locked) if locked else "Incorrect admin password.")
     return render_template("admin_login.html")
 
 
@@ -589,7 +940,28 @@ def Admin():
         return guard
     now = Now()
     participants = sorted(house.participants.values(), key=lambda p: p.name)
-    return render_template("admin.html", participants=participants, now=now, rules=house.current_rules)
+    login_info = {
+        p.id: {
+            "activated": security.IsActivated(conn, p.id),
+            "pending_code": security.PendingCode(conn, p.id),
+            "passkeys": len(security.ListPasskeys(conn, p.id)),
+        }
+        for p in participants
+    }
+    waiting = [p for p in participants if not login_info[p.id]["activated"]]
+    addresses = {}
+    for p in waiting:
+        profile = persistence.GetParticipantProfile(conn, p.id)
+        addresses[p.id] = profile["address"] if profile else ""
+    return render_template(
+        "admin.html",
+        participants=participants,
+        now=now,
+        rules=house.current_rules,
+        login_info=login_info,
+        waiting=waiting,
+        addresses=addresses,
+    )
 
 
 @app.route("/admin/participant/<participant_id>")
@@ -607,7 +979,72 @@ def AdminParticipantProfile(participant_id):
     if participant is None:
         abort(404)
     profile = persistence.GetParticipantProfile(conn, participant_id)
-    return render_template("admin_participant.html", participant=participant, profile=profile)
+    creds = persistence.GetCredentialsForParticipant(conn, participant_id)
+    return render_template(
+        "admin_participant.html",
+        participant=participant,
+        profile=profile,
+        username=creds["username"] if creds else "",
+        activated=security.IsActivated(conn, participant_id),
+        pending_code=security.PendingCode(conn, participant_id),
+        passkeys=security.ListPasskeys(conn, participant_id),
+    )
+
+
+@app.route("/admin/participant/<participant_id>/letter", methods=["POST"])
+def AdminLetter(participant_id):
+    """Make a one-time code and show the printable letter that carries it.
+
+    purpose=activation: for someone who registered but isn't activated yet.
+    purpose=recovery: resets their login first — removes their passkeys and
+    turns off their password — so only whoever holds the letter gets back in.
+    The code is shown only on this page; printing a new letter replaces it.
+    """
+    guard = RequireAdmin()
+    if guard:
+        return guard
+    participant = house.participants.get(participant_id)
+    creds = persistence.GetCredentialsForParticipant(conn, participant_id)
+    if participant is None or creds is None:
+        abort(404)
+    purpose = request.form.get("purpose")
+    if purpose not in (security.ACTIVATION, security.RECOVERY):
+        abort(400)
+    if purpose == security.ACTIVATION and security.IsActivated(conn, participant_id):
+        flash(f"{participant.name} is already activated.")
+        return redirect(url_for("AdminParticipantProfile", participant_id=participant_id))
+    if purpose == security.RECOVERY:
+        security.RemoveAllPasskeys(conn, participant_id)
+        persistence.SetCredentials(conn, participant_id, creds["username"], security.NO_PASSWORD)
+        security.ClearFailures(conn, _UserKey(creds["username"]))
+    code = security.IssueCode(conn, participant_id, purpose, Now())
+    profile = persistence.GetParticipantProfile(conn, participant_id)
+    return render_template(
+        "letter.html",
+        participant=participant,
+        username=creds["username"],
+        address=profile["address"] if profile else "",
+        purpose=purpose,
+        code=security.FormatCode(code),
+        expires=security.PendingCode(conn, participant_id)["expires_at"],
+        today=Now().date(),
+        site=_SiteAddress(),
+    )
+
+
+@app.route("/admin/participant/<participant_id>/activate", methods=["POST"])
+def AdminActivate(participant_id):
+    """Activate without a letter, for someone the admin has verified in person."""
+    guard = RequireAdmin()
+    if guard:
+        return guard
+    participant = house.participants.get(participant_id)
+    if participant is None:
+        abort(404)
+    if not security.IsActivated(conn, participant_id):
+        _Activate(participant)
+    flash(f"{participant.name} is activated.")
+    return redirect(url_for("Admin"))
 
 
 @app.route("/admin/participant/<participant_id>/<field>")
@@ -636,6 +1073,9 @@ def AdminSignForm():
     participant = house.participants.get(participant_id)
     if participant is None:
         flash("No such Participant.")
+        return redirect(url_for("Admin"))
+    if not security.IsActivated(conn, participant_id):
+        flash(f"{participant.name} isn't activated yet. Mail them an activation letter, or activate them in person, first.")
         return redirect(url_for("Admin"))
     with LOCK:
         participant.SignForm(signed_date=Now().date(), scan_ref=scan_ref)

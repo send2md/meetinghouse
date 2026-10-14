@@ -1,6 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Meetinghouse{% endblock %}
 {% block content %}
+{% if not activated %}
+<div class="card notice">
+  <h3>Your account isn't activated yet</h3>
+  <p>We're mailing a letter with a one-time code to the address you registered with.
+    You can read along now; once you type in the code, you can vote, comment, and start Topics.</p>
+  <form method="post" action="{{ url_for('AccountActivate') }}">
+    <label>Code from your letter</label>
+    <input type="text" name="code" required autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" style="max-width:14rem;">
+    <input type="submit" value="Activate">
+  </form>
+</div>
+{% elif not has_passkey %}
+<div class="card notice">
+  <p><strong>Protect your account:</strong> <a href="{{ url_for('Account') }}">add a passkey</a>
+    so that only you can log in, using your device's face, fingerprint, or PIN unlock.</p>
+</div>
+{% endif %}
 <h1>Open Topics</h1>
 {% for subsection, items in open_by_subsection.items() %}
   <div class="card">

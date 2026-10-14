@@ -104,3 +104,12 @@ textarea { min-height: 5rem; }
   header.site, .flashes, .no-print { display: none; }
   main { padding: 0; }
 }
+
+.card.notice { border-color: #e5c876; background: #fffbea; }
+
+.letter { background: #fff; padding: 2rem 2.5rem; border: 1px solid var(--line); max-width: 640px; margin: 0 auto; }
+.letter address { font-style: normal; margin: 1.5rem 0; }
+.letter .code-box { margin: 1.25rem 0; width: auto; }
+.letter .code-box th { text-transform: none; font-size: 1rem; padding-right: 1.5rem; }
+.letter .code { font-family: "Courier New", monospace; font-size: 1.6rem; font-weight: 700; letter-spacing: 0.15em; }
+@media print { .letter { border: none; padding: 0; } }

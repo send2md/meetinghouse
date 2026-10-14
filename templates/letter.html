@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Letter for {{ participant.name }} — Meetinghouse{% endblock %}
+{% block content %}
+<div class="no-print card">
+  <p><strong>Print this letter and mail it to the address on it.</strong> The code is shown only
+    on this page — if it's lost, print a new letter, which replaces this code.</p>
+  <p><button onclick="window.print()">Print letter</button>
+     <a class="button secondary" href="{{ url_for('AdminParticipantProfile', participant_id=participant.id) }}">Done</a></p>
+</div>
+
+<div class="letter">
+  <p>Meetinghouse<br>{{ site }}</p>
+  <p>{{ today.strftime('%B %-d, %Y') }}</p>
+  <address>{{ participant.name }}<br>{{ address|e|replace('\n', '<br>'|safe) }}</address>
+
+  <p>Dear {{ participant.name }},</p>
+  {% if purpose == 'activation' %}
+    <p>Thank you for registering with Meetinghouse. To finish, activate your account with the
+      code below. Receiving this letter shows that the address you gave us is really yours.</p>
+  {% else %}
+    <p>As requested, we have reset your Meetinghouse login. Use the code below to get back in.
+      Your old passkeys and password no longer work.</p>
+  {% endif %}
+
+  <table class="code-box">
+    <tr><th>Your user name</th><td>{{ username }}</td></tr>
+    <tr><th>Your one-time code</th><td class="code">{{ code }}</td></tr>
+  </table>
+
+  <ol>
+    <li>Go to <strong>{{ site }}</strong></li>
+    <li>Type your user name and click <em>Log in</em>.</li>
+    <li>Choose <em>use the code from your letter</em>, and type the code above.</li>
+    <li>Then add a passkey, so that only you can log in from now on.</li>
+  </ol>
+
+  <p>The code works once and expires on {{ expires.strftime('%B %-d, %Y') }}.
+    If you didn't expect this letter, please let us know.</p>
+  <p>Meetinghouse</p>
+</div>
+{% endblock %}

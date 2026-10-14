@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Code from a letter — Meetinghouse{% endblock %}
+{% block content %}
+<div class="card" style="max-width:420px;margin:2rem auto;">
+  <h1>{{ username }}</h1>
+  <p>Type the code from the letter we mailed you. It looks like <strong>ABCD-EFGH</strong>.</p>
+  <form method="post" action="{{ url_for('LoginCode') }}">
+    <label>Code from your letter</label>
+    <input type="text" name="code" required autofocus autocomplete="one-time-code"
+           autocapitalize="characters" spellcheck="false">
+    <p><input type="submit" value="Log in"></p>
+  </form>
+  <p class="muted">Not {{ username }}? <a href="{{ url_for('Login') }}">Start again</a>.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Your account — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Your account</h1>
+
+{% if not activated %}
+<div class="card">
+  <h3>Activate your account</h3>
+  <p>To take part, type the code from the activation letter we mail to the address you
+    registered with. This shows the address is really yours.</p>
+  {% if pending_code %}
+    <p class="muted">A letter was prepared on {{ pending_code.issued_at.strftime('%B %-d, %Y') }}.</p>
+  {% else %}
+    <p class="muted">Your letter hasn't been sent yet. It's on its way soon.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('AccountActivate') }}">
+    <label>Code from your letter</label>
+    <input type="text" name="code" required autocomplete="one-time-code" autocapitalize="characters" spellcheck="false">
+    <p><input type="submit" value="Activate"></p>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>Passkeys</h3>
+  <p>A passkey lets you log in with your phone or computer's face, fingerprint, or PIN
+    unlock. Nobody else can use it, and there's no password to steal or forget.
+    <strong>Once you add a passkey, your password stops working.</strong></p>
+  {% if passkeys %}
+    <table>
+      <tr><th>Passkey</th><th>Added</th><th>Last used</th><th></th></tr>
+      {% for pk in passkeys %}
+      <tr>
+        <td>{{ pk['label'] }}</td>
+        <td>{{ pk['created_at'][:10] }}</td>
+        <td>{{ pk['last_used_at'][:10] if pk['last_used_at'] else 'never' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('PasskeyRemove') }}" class="inline">
+            <input type="hidden" name="credential_id" value="{{ pk['credential_id'] }}">
+            <button type="submit" class="secondary">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="muted">Tip: add a passkey on each device you use, so losing one doesn't lock you out.</p>
+  {% else %}
+    <p class="muted">You don't have a passkey yet.</p>
+  {% endif %}
+  <label for="passkey-label">Name for the new passkey (optional)</label>
+  <input type="text" id="passkey-label" placeholder="e.g. My iPhone" maxlength="60">
+  <p><button type="button" data-passkey="add"
+             data-options="{{ url_for('PasskeyRegisterOptions') }}"
+             data-verify="{{ url_for('PasskeyRegisterVerify') }}"
+             data-label="passkey-label"
+             data-status="passkey-status">Add a passkey on this device</button></p>
+  <p id="passkey-status" class="muted" role="status"></p>
+</div>
+
+<div class="card">
+  <h3>Password</h3>
+  {% if passkeys %}
+    <p class="muted">Password login is off because you use a passkey.</p>
+  {% else %}
+    {% if not has_password %}
+      <p><strong>You have no way to log in next time.</strong> Add a passkey above, or set a password here.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('AccountPassword') }}">
+      <label>New password (at least 8 characters)</label>
+      <input type="password" name="password" required minlength="8" autocomplete="new-password">
+      <label>Type it again</label>
+      <input type="password" name="confirm" required minlength="8" autocomplete="new-password">
+      <p><input type="submit" value="Save password"></p>
+    </form>
+  {% endif %}
+</div>
+
+<p class="muted">Your user name is <strong>{{ username }}</strong>.</p>
+<script src="{{ url_for('static', filename='passkeys.js') }}"></script>
+{% endblock %}

@@ -18,3 +18,11 @@ os.environ["MEETINGHOUSE_SECRET_KEY"] = "REPLACE-ME"
 
 # A password for /admin, separate from any Participant's login.
 os.environ["MEETINGHOUSE_ADMIN_PASSWORD"] = "REPLACE-ME"
+
+# Passkeys only work on the exact web address they were made on, so tell
+# the app the live site's address rather than letting it guess.
+os.environ["MEETINGHOUSE_RP_ID"] = "meetinghouse.ai"
+os.environ["MEETINGHOUSE_ORIGINS"] = "https://meetinghouse.ai,https://www.meetinghouse.ai"
+
+# The live site is HTTPS: never send the login cookie over plain HTTP.
+os.environ["MEETINGHOUSE_SECURE_COOKIES"] = "1"

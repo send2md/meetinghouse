@@ -1,2 +1,3 @@
 Flask>=3.0
+webauthn>=2.0,<4  # passkey login (see security.py)
 flup>=1.0.3  # only needed for TigerTech (or other FastCGI) deployment; see deploy/tigertech/

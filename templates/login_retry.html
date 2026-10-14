@@ -16,5 +16,8 @@
     <input type="hidden" name="username" value="{{ username }}">
     <p><input type="submit" value="This is a new login" class="secondary"></p>
   </form>
+
+  <p class="muted">Forgot your password? Ask the administrator to mail you a recovery letter,
+    then <a href="{{ url_for('LoginCode') }}">use the code from your letter</a>.</p>
 </div>
 {% endblock %}
