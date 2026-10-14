@@ -322,10 +322,8 @@ def SaveParticipantProfile(
     conn,
     participant_id: str,
     address: str,
-    mothers_maiden_name: str,
     age: int,
     photo_path: str,
-    thumbprint_path: str,
     created_at: dt.datetime,
 ):
     """Record the identity details a self-registering Participant supplied.
@@ -333,6 +331,9 @@ def SaveParticipantProfile(
     These back up the paper form they print and mail in (see app.py's
     Register view) so the Meeting can manually cross-check a submission
     against what arrives by mail; they aren't used by the engine itself.
+
+    The mothers_maiden_name and thumbprint_path columns are retired (see
+    ForgetRetiredProfileFields) and always stored empty.
     """
     conn.execute(
         """
@@ -340,8 +341,34 @@ def SaveParticipantProfile(
             (participant_id, address, mothers_maiden_name, age, photo_path, thumbprint_path, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (participant_id, address, mothers_maiden_name, age, photo_path, thumbprint_path, _Iso(created_at)),
+        (participant_id, address, "", age, photo_path, "", _Iso(created_at)),
     )
+    conn.commit()
+
+
+def ForgetRetiredProfileFields(conn):
+    """Erase mother's maiden names and thumbprint images collected earlier.
+
+    Registration used to ask for both. Neither proves who someone is (a
+    maiden name is often findable, and anyone can upload any thumbprint
+    picture), so they're no longer collected, and copies already stored
+    are deleted rather than kept as sensitive data with no purpose.
+    Safe to run on every startup: it does nothing once they're gone.
+    """
+    import os
+
+    rows = conn.execute(
+        "SELECT participant_id, thumbprint_path FROM participant_profiles "
+        "WHERE mothers_maiden_name != '' OR thumbprint_path != ''"
+    ).fetchall()
+    for row in rows:
+        path = row["thumbprint_path"]
+        if path and os.path.isfile(path):
+            os.remove(path)
+        conn.execute(
+            "UPDATE participant_profiles SET mothers_maiden_name = '', thumbprint_path = '' WHERE participant_id = ?",
+            (row["participant_id"],),
+        )
     conn.commit()
 
 

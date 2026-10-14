@@ -46,7 +46,7 @@ DB_PATH = os.environ.get("MEETINGHOUSE_DB", os.path.join(os.path.dirname(__file_
 ADMIN_PASSWORD = os.environ.get("MEETINGHOUSE_ADMIN_PASSWORD", "admin")
 TICK_INTERVAL_SECONDS = int(os.environ.get("MEETINGHOUSE_TICK_SECONDS", "300"))
 
-# Self-registration uploads (photo + thumbprint) live outside ~/html, next to
+# Self-registration photo uploads live outside ~/html, next to
 # the SQLite file, so they're never web-accessible except through the
 # admin-gated AdminParticipantImage route below.
 UPLOAD_DIR = os.environ.get("MEETINGHOUSE_UPLOADS", os.path.join(os.path.dirname(DB_PATH), "uploads"))
@@ -56,7 +56,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("MEETINGHOUSE_SECRET_KEY", "dev-secret-change-me")
-app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # cap uploads (photo + thumbprint) at 8 MB total
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # cap uploads (the photo) at 8 MB
 # Session cookies: never readable by page scripts, not sent along with
 # requests started by other sites, and (on the live HTTPS site, where
 # config.py sets MEETINGHOUSE_SECURE_COOKIES=1) never sent over plain HTTP.
@@ -76,6 +76,7 @@ def Now():
 
 security.InitSchema(conn)
 security.EnsureStatusRows(conn, house, Now())
+persistence.ForgetRetiredProfileFields(conn)
 
 
 def FlushNewEvents(prev_len):
@@ -115,7 +116,7 @@ def _ImageMimeType(filename):
 
 
 def _SaveUpload(file_storage, participant_id, field_name):
-    """Save an uploaded photo/thumbprint under UPLOAD_DIR and return (path, raw bytes).
+    """Save an uploaded photo under UPLOAD_DIR and return (path, raw bytes).
 
     Returning the bytes too lets the caller embed the same image inline
     (as a data: URI) on the one-time printable confirmation page, without
@@ -368,10 +369,10 @@ def Register():
 
     Collects everything the printed, mailed-in form needs (see
     register_complete.html): a name, a password the Participant chooses,
-    and the identity details a Quaker Meeting has always wanted on that
-    paper form (address, mother's maiden name, age) plus a photo and a
-    thumbprint, uploaded here and printed back out on the confirmation
-    page so the same images go in the envelope.
+    and the identity details a Quaker Meeting wants on that paper form
+    (address, age) plus a photo, uploaded here and printed back out on
+    the confirmation page so the same image goes in the envelope. The
+    address matters most: the activation letter is mailed there.
     """
     username = session.get("pending_username")
     if not username:
@@ -382,10 +383,8 @@ def Register():
         name = request.form.get("name", "").strip()
         password = request.form.get("password", "")
         address = request.form.get("address", "").strip()
-        mothers_maiden_name = request.form.get("mothers_maiden_name", "").strip()
         age_raw = request.form.get("age", "").strip()
         photo = request.files.get("photo")
-        thumbprint = request.files.get("thumbprint")
 
         errors = []
         if not name:
@@ -394,14 +393,10 @@ def Register():
             errors.append("Password must be at least 8 characters.")
         if not address:
             errors.append("Address is required.")
-        if not mothers_maiden_name:
-            errors.append("Mother's maiden name is required.")
         if not age_raw.isdigit():
             errors.append("Age must be a whole number.")
         if not photo or not photo.filename or not _AllowedImage(photo.filename):
             errors.append("A photo (jpg or png) is required.")
-        if not thumbprint or not thumbprint.filename or not _AllowedImage(thumbprint.filename):
-            errors.append("A thumbprint image (jpg or png) is required.")
         if errors:
             for error in errors:
                 flash(error)
@@ -432,9 +427,8 @@ def Register():
                     "username_taken.html", taken_username=username, suggestion=_SuggestUsername(username)
                 )
             photo_path, photo_bytes = _SaveUpload(photo, participant.id, "photo")
-            thumbprint_path, thumbprint_bytes = _SaveUpload(thumbprint, participant.id, "thumbprint")
             persistence.SaveParticipantProfile(
-                conn, participant.id, address, mothers_maiden_name, int(age_raw), photo_path, thumbprint_path, Now()
+                conn, participant.id, address, int(age_raw), photo_path, Now()
             )
 
         session.pop("pending_username", None)
@@ -444,12 +438,9 @@ def Register():
             participant=participant,
             username=username,
             address=address,
-            mothers_maiden_name=mothers_maiden_name,
             age=age_raw,
             photo_data_uri=f"data:image/{_ImageMimeType(photo.filename)};base64,"
             + base64.b64encode(photo_bytes).decode("ascii"),
-            thumbprint_data_uri=f"data:image/{_ImageMimeType(thumbprint.filename)};base64,"
-            + base64.b64encode(thumbprint_bytes).decode("ascii"),
         )
 
     return render_template("register.html", username=username)
@@ -1052,12 +1043,12 @@ def AdminParticipantImage(participant_id, field):
     guard = RequireAdmin()
     if guard:
         return guard
-    if field not in ("photo", "thumbprint"):
+    if field != "photo":
         abort(404)
     profile = persistence.GetParticipantProfile(conn, participant_id)
     if profile is None:
         abort(404)
-    path = profile["photo_path"] if field == "photo" else profile["thumbprint_path"]
+    path = profile["photo_path"]
     if not path or not os.path.isfile(path):
         abort(404)
     return send_file(path)

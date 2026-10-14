@@ -46,9 +46,7 @@ def _Register(test_client, username, name="Jane Doe", password="correct horse ba
         "name": name,
         "password": password,
         "address": "123 Main St",
-        "mothers_maiden_name": "Smith",
         "age": "30",
-        "thumbprint": _Image("thumb.jpg"),
         "photo": _Image("photo.jpg"),
     }
     data.update(overrides)
@@ -89,7 +87,7 @@ def test_full_registration_creates_a_working_login(client):
     resp = _Register(test_client, "janedoe")
     assert b"Welcome, Jane Doe" in resp.data
     assert b"123 Main St" in resp.data  # printable confirmation shows what was submitted
-    assert b"data:image/jpeg;base64," in resp.data  # photo/thumbprint embedded for printing
+    assert b"data:image/jpeg;base64," in resp.data  # photo embedded for printing
 
     test_client.get("/logout")
     login_resp = _Login(test_client, "janedoe", "correct horse battery")
@@ -101,7 +99,7 @@ def test_registration_requires_all_fields(client):
     test_client.post("/login", data={"username": "janedoe"})
     resp = test_client.post(
         "/register",
-        data={"name": "", "password": "short", "address": "", "mothers_maiden_name": "", "age": "not-a-number"},
+        data={"name": "", "password": "short", "address": "", "age": "not-a-number"},
         content_type="multipart/form-data",
         follow_redirects=True,
     )
@@ -109,7 +107,6 @@ def test_registration_requires_all_fields(client):
     assert b"at least 8 characters" in resp.data
     assert b"Age must be a whole number" in resp.data
     assert b"photo" in resp.data.lower()
-    assert b"thumbprint" in resp.data.lower()
 
 
 def test_known_username_wrong_password_offers_retry_or_new_login(client):
@@ -160,7 +157,8 @@ def test_admin_can_view_a_participants_self_registration_profile(client):
     (participant_id,) = list(app_module.house.participants.keys())
     profile_resp = test_client.get(f"/admin/participant/{participant_id}")
     assert b"123 Main St" in profile_resp.data
-    assert b"Smith" in profile_resp.data
+    assert b"maiden" not in profile_resp.data.lower()
+    assert b"thumbprint" not in profile_resp.data.lower()
 
     photo_resp = test_client.get(f"/admin/participant/{participant_id}/photo")
     assert photo_resp.status_code == 200
@@ -188,3 +186,33 @@ def test_front_page_is_the_dashboard_once_logged_in(client):
     resp = test_client.get("/")
     assert b"Welcome" not in resp.data  # that flash was from registering, not a fresh "/" hit
     assert b"Forum" in resp.data  # the logged-in nav, not the login form
+
+
+def test_registration_no_longer_asks_for_thumbprint_or_maiden_name(client):
+    test_client, _ = client
+    test_client.post("/login", data={"username": "janedoe"})
+    form = test_client.get("/register").data.lower()
+    assert b"thumbprint" not in form
+    assert b"maiden" not in form
+
+
+def test_previously_collected_thumbprints_and_maiden_names_are_erased(client):
+    """Data collected under the old form is deleted the next time the app starts."""
+    test_client, app_module = client
+    _Register(test_client, "janedoe")
+    (participant_id,) = list(app_module.house.participants.keys())
+    old_thumb = app_module.os.path.join(app_module.UPLOAD_DIR, participant_id, "thumbprint.jpg")
+    with open(old_thumb, "wb") as f:
+        f.write(b"old thumbprint")
+    app_module.conn.execute(
+        "UPDATE participant_profiles SET mothers_maiden_name = 'Smith', thumbprint_path = ? WHERE participant_id = ?",
+        (old_thumb, participant_id),
+    )
+    app_module.conn.commit()
+
+    importlib.reload(app_module)
+    row = app_module.persistence.GetParticipantProfile(app_module.conn, participant_id)
+    assert row["mothers_maiden_name"] == "" and row["thumbprint_path"] == ""
+    assert not app_module.os.path.exists(old_thumb)
+    assert row["address"] == "123 Main St"  # everything else is kept
+    assert app_module.os.path.isfile(row["photo_path"])

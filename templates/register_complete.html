@@ -13,20 +13,18 @@
     <tr><th>$1.00 charge paid</th><td>not yet collected</td></tr>
     <tr><th>Whole real name</th><td>{{ participant.name }}</td></tr>
     <tr><th>Address</th><td>{{ address }}</td></tr>
-    <tr><th>Mother's maiden name</th><td>{{ mothers_maiden_name }}</td></tr>
     <tr><th>Age</th><td>{{ age }}</td></tr>
   </table>
 
   <p>
-    <img src="{{ photo_data_uri }}" alt="Photo" style="max-width:200px;margin-right:1rem;">
-    <img src="{{ thumbprint_data_uri }}" alt="Thumbprint" style="max-width:200px;">
+    <img src="{{ photo_data_uri }}" alt="Photo" style="max-width:200px;">
   </p>
 
   <p><strong>What happens next:</strong> we'll mail a letter with a one-time activation code
     to the address above. When it arrives, log in and type the code to activate your account.
     Until then you can look around, but not vote or post.</p>
 
-  <p class="muted">Please print this page (with the photo and thumbprint above) and mail
+  <p class="muted">Please print this page (with the photo above) and mail
     it to:</p>
   <address>
     Meetinghouse<br>
