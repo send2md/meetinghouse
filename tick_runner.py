@@ -17,10 +17,12 @@ def RunTick(house, conn, now):
     """Close every eligible Topic/Poll, persist the results, and return them."""
     prev_len = len(house.event_log)
     closed = house.Tick(now)
-    for topic in closed:
+    # A dismissal changes other open Topics too (votes removed, clock
+    # restarted, a note added), so save every open Topic as well.
+    for topic in list(closed) + [t for t in house.topics.values() if not t.closed]:
         persistence.SaveTopic(conn, topic)
-        if topic.result is PollResult.PASSED and topic.subsection is Subsection.RULES and topic.target_subsection:
-            persistence.SaveRules(conn, topic.target_subsection, house.current_rules[topic.target_subsection])
+        if topic.result is PollResult.PASSED and topic.subsection is Subsection.RULES and topic.proposed_change:
+            persistence.SaveRules(conn, topic.proposed_change.subsection, house.current_rules[topic.proposed_change.subsection])
         if topic.result is PollResult.PASSED and topic.subsection is Subsection.JURY:
             participant = house.participants[topic.target_participant_id]
             persistence.SaveParticipant(conn, participant)

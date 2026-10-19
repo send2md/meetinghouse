@@ -113,3 +113,8 @@ textarea { min-height: 5rem; }
 .letter .code-box th { text-transform: none; font-size: 1rem; padding-right: 1.5rem; }
 .letter .code { font-family: "Courier New", monospace; font-size: 1.6rem; font-weight: 700; letter-spacing: 0.15em; }
 @media print { .letter { border: none; padding: 0; } }
+
+.prewrap { white-space: pre-wrap; }
+fieldset.card { margin: 0.75rem 0; }
+fieldset.card legend { font-weight: 600; color: var(--accent); padding: 0 0.3rem; }
+code { font-family: "Courier New", monospace; font-size: 0.9em; word-break: break-all; }

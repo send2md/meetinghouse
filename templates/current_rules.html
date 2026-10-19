@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Current rules — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Current rules</h1>
+<p>Every Topic stays open at least its minimum life, then closes once it has been quiet for its quiet time.
+  It passes if enough Readers voted (turnout) and enough votes were in favour (approval).
+  Only turnout and approval can change, by a Rules vote, 5 points at a time and never past the limits below.</p>
+
+<div class="card">
+  <h3>Fixed for every Topic</h3>
+  <table>
+    <tr><th>Section</th><th>Minimum life</th><th>Quiet time</th><th>Votes</th></tr>
+    {% for s, r in rules.items() %}
+    <tr>
+      <td>{{ s.value }}</td>
+      <td>{{ r.min_life|humanage }}</td>
+      <td>{{ r.quiet_time|humanage }}</td>
+      <td>{{ "Yes · Abstain · No" if s.value == "Forum" else "Yes · No" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>Changeable by a Rules vote</h3>
+  <table>
+    <tr><th>Setting</th><th>Now</th><th>Limits</th><th>Last changed</th><th>Open Topic</th></tr>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.subsection.value }} {{ row.label }}</td>
+      <td><strong>{{ row.current|pct }}</strong></td>
+      <td>{{ row.low|pct }} to {{ row.high|pct }}</td>
+      <td>{{ row.last_changed|day if row.last_changed else "never" }}</td>
+      <td>{% if row.open_topic %}<a href="{{ url_for('TopicDetail', topic_id=row.open_topic.id) }}">{{ row.open_topic.title }}</a>{% else %}<span class="muted">none</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Turnout = voters ÷ Readers. Approval = votes in favour ÷ all votes; in the Forum, Abstain counts in favour.</p>
+</div>
+{% endblock %}

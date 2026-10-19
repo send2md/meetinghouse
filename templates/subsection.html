@@ -5,14 +5,14 @@
   <a class="button" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Topic</a>
 </h1>
 <p class="muted">
-  Quiet time {{ rule.quiet_time|humanage }} · minimum life {{ rule.min_life|humanage }} ·
-  needs Voters/Readers ≥ {{ "%.0f"|format(rule.voter_fraction*100) }}% ·
-  needs (Yes+Abstain)/(Yes+Abstain+No) ≥ {{ "%.1f"|format(rule.approval_fraction*100) }}%
+  Minimum life {{ rule.min_life|humanage }} · quiet time {{ rule.quiet_time|humanage }} ·
+  turnout {{ rule.voter_fraction|pct }} · approval {{ rule.approval_fraction|pct }} ·
+  <a href="{{ url_for('CurrentRules') }}">all current rules</a>
 </p>
 <div class="card">
   {% if rows %}
     <table>
-      <tr><th>Topic</th><th>Status</th><th>Yes</th><th>Abstain</th><th>No</th></tr>
+      <tr><th>Topic</th><th>Status</th><th>Yes</th>{% if subsection.value == "Forum" %}<th>Abstain</th>{% endif %}<th>No</th></tr>
       {% for row in rows %}
       <tr>
         <td><a href="{{ url_for('TopicDetail', topic_id=row.topic.id) }}">{{ row.topic.title }}</a></td>
@@ -24,7 +24,7 @@
           {% endif %}
         </td>
         <td>{{ row.counts[VoteChoice.YES] if row.counts else '—' }}</td>
-        <td>{{ row.counts[VoteChoice.ABSTAIN] if row.counts else '—' }}</td>
+        {% if subsection.value == "Forum" %}<td>{{ row.counts[VoteChoice.ABSTAIN] if row.counts else '—' }}</td>{% endif %}
         <td>{{ row.counts[VoteChoice.NO] if row.counts else '—' }}</td>
       </tr>
       {% endfor %}

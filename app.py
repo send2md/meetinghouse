@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -37,7 +38,13 @@ import persistence
 import security
 import tick_runner
 from meetinghouse import (
+    RESTART_LIMIT,
+    SETTING_LIMITS,
+    SETTING_NAMES,
+    DuplicateTopic,
     MeetinghouseError,
+    Percent,
+    RuleChange,
     Subsection,
     VoteChoice,
 )
@@ -155,6 +162,16 @@ def HumanAge(delta: dt.timedelta):
         return f"{days // 7}w {days % 7}d"
     hours = delta.seconds // 3600
     return f"{days}d {hours}h"
+
+
+@app.template_filter("pct")
+def PercentFilter(fraction):
+    return Percent(fraction)
+
+
+@app.template_filter("day")
+def DayFilter(value):
+    return "" if value is None else f"{value:%B} {value.day}, {value.year}"
 
 
 @app.template_filter("fmt")
@@ -729,24 +746,39 @@ def NewTopic(name):
     except ValueError:
         abort(404)
 
-    other_participants = sorted(house.participants.values(), key=lambda p: p.name)
+    def Form(**extra):
+        return render_template(
+            "new_topic.html",
+            subsection=subsection,
+            participants=sorted(house.participants.values(), key=lambda p: p.name),
+            settings=_SettingChoices(),
+            form=request.form,
+            **extra,
+        )
 
     if request.method == "POST":
         title = request.form.get("title", "").strip()
         description = request.form.get("description", "").strip() or None
         poll_question = request.form.get("poll_question", "").strip() or None
-        target_subsection = None
         target_participant_id = None
-        proposed_rule_config = None
+        proposed_change = None
+        software_ref = None
 
         if subsection is Subsection.RULES:
-            try:
-                target_subsection = Subsection(request.form.get("target_subsection", ""))
-            except ValueError:
-                flash("Choose which subsection this Rule addresses.")
-                return render_template("new_topic.html", subsection=subsection, participants=other_participants)
-            current = house.current_rules[target_subsection]
-            proposed_rule_config = _BuildProposedRule(current, request.form)
+            if request.form.get("kind") == "software":
+                software_ref = request.form.get("software_ref", "").strip().lower()
+                if not re.fullmatch(r"[0-9a-f]{40}", software_ref):
+                    flash("Give the full 40-character commit id from GitHub, so exactly that code is what gets approved.")
+                    return Form()
+                if not title:
+                    flash("Give the software change a title.")
+                    return Form()
+            else:
+                proposed_change, error = _ParseRuleChange(request.form)
+                if error:
+                    flash(error)
+                    return Form()
+                title = None  # the engine names it, e.g. "Change Forum approval from 66.7% to 70%"
         elif subsection is Subsection.JURY:
             target_participant_id = request.form.get("target_participant_id") or None
 
@@ -760,51 +792,60 @@ def NewTopic(name):
                     Now(),
                     description=description,
                     poll_question=poll_question,
-                    target_subsection=target_subsection,
                     target_participant_id=target_participant_id,
-                    proposed_rule_config=proposed_rule_config,
+                    proposed_change=proposed_change,
+                    software_ref=software_ref,
                 )
                 persistence.SaveTopic(conn, topic)
                 FlushNewEvents(prev_len)
+        except DuplicateTopic as exc:
+            return Form(duplicate={"message": str(exc), "topic_id": exc.existing_topic_id})
         except MeetinghouseError as exc:
             flash(str(exc))
-            return render_template("new_topic.html", subsection=subsection, participants=other_participants)
+            return Form()
 
         return redirect(url_for("TopicDetail", topic_id=topic.id))
 
-    return render_template("new_topic.html", subsection=subsection, participants=other_participants)
+    return Form()
 
 
-def _BuildProposedRule(current, form):
-    def _weeks(field, fallback_timedelta):
-        raw = form.get(field, "").strip()
-        if not raw:
-            return fallback_timedelta
-        return dt.timedelta(weeks=float(raw))
+def _SettingChoices():
+    """Every changeable setting, its current value, and how far one Topic may move it."""
+    choices = []
+    for subsection in Subsection:
+        for setting, label in SETTING_NAMES.items():
+            low, high = SETTING_LIMITS[(subsection, setting)]
+            current = getattr(house.current_rules[subsection], setting)
+            choices.append(
+                {
+                    "key": f"{subsection.value}:{setting}",
+                    "label": f"{subsection.value} {label}",
+                    "current": current,
+                    "low": low,
+                    "high": high,
+                    "step_low": max(low, current - 0.05),
+                    "step_high": min(high, current + 0.05),
+                }
+            )
+    return choices
 
-    def _fraction(field, fallback):
-        raw = form.get(field, "").strip()
-        if not raw:
-            return fallback
-        return float(raw)
 
-    from meetinghouse import RuleConfig
-
-    quiet_time = _weeks("quiet_time_weeks", current.quiet_time)
-    min_life = _weeks("min_life_weeks", current.min_life)
-    voter_fraction = _fraction("voter_fraction", current.voter_fraction)
-    approval_fraction = _fraction("approval_fraction", current.approval_fraction)
-
-    if (quiet_time, min_life, voter_fraction, approval_fraction) == (
-        current.quiet_time,
-        current.min_life,
-        current.voter_fraction,
-        current.approval_fraction,
-    ):
-        return None
-    return RuleConfig(
-        quiet_time=quiet_time, min_life=min_life, voter_fraction=voter_fraction, approval_fraction=approval_fraction
-    )
+def _ParseRuleChange(form):
+    """Read "which setting" and "new value (%)" from the form into a RuleChange."""
+    key = form.get("setting", "")
+    try:
+        subsection_name, setting = key.split(":", 1)
+        subsection = Subsection(subsection_name)
+    except ValueError:
+        return None, "Choose which setting this Topic changes."
+    if setting not in SETTING_NAMES:
+        return None, "Choose which setting this Topic changes."
+    raw = form.get("value", "").strip().rstrip("%")
+    try:
+        value = round(float(raw) / 100, 4)
+    except ValueError:
+        return None, "Give the new value as a percentage, for example 70."
+    return RuleChange(subsection=subsection, setting=setting, value=value), None
 
 
 @app.route("/topic/<topic_id>")
@@ -817,33 +858,44 @@ def TopicDetail(topic_id):
         abort(404)
     now = Now()
 
-    if g.participant.IsActive(now) and topic_id in house.topics and not topic.closed:
+    first_visit = False
+    if g.participant.IsActive(now) and not topic.closed:
         with LOCK:
             try:
-                house.MarkRead(topic_id, g.participant.id, now)
-                persistence.SaveTopic(conn, topic)
+                first_visit = house.MarkRead(topic_id, g.participant.id, now)
+                if first_visit:
+                    persistence.SaveTopic(conn, topic)
             except MeetinghouseError:
                 pass
 
-    comments = []
-    for participant_id, history in topic.votes.items():
+    # Votes (with their comments) and discussion posts, in the order they happened.
+    entries = []
+    for history in topic.votes.values():
         for record in history:
-            comments.append(record)
-    comments.sort(key=lambda r: r.timestamp)
+            entries.append({"kind": "vote", "at": record.timestamp, "record": record})
+    for post in topic.posts:
+        entries.append({"kind": "post", "at": post.timestamp, "post": post})
+    entries.sort(key=lambda e: e["at"])
 
     my_vote = topic.CurrentVote(g.participant.id) if topic.HasPoll() else None
-    counts = house.EffectiveVoteCounts(topic, now) if topic.HasPoll() else None
-    readers = house.EffectiveReaders(topic, now)
-
+    can_act = g.participant.IsActive(now) and not topic.closed
     return render_template(
         "topic.html",
         topic=topic,
-        comments=comments,
+        entries=entries,
         my_vote=my_vote,
-        counts=counts,
-        readers=readers,
+        counts=house.EffectiveVoteCounts(topic, now) if topic.HasPoll() else None,
+        dismissed_count=house.DismissedCount(topic, now),
+        readers=house.EffectiveReaders(topic, now),
         now=now,
-        dismissed_ids={pid for pid in topic.votes if house.participants.get(pid) and house.participants[pid].IsDismissed(now)},
+        can_act=can_act,
+        ask_to_vote=first_visit and topic.HasPoll() and my_vote is None and can_act,
+        votes_left=topic.RestartsLeft(g.participant.id, "votes"),
+        posts_left=topic.RestartsLeft(g.participant.id, "posts"),
+        restart_limit=RESTART_LIMIT,
+        setting_now=getattr(house.current_rules[topic.proposed_change.subsection], topic.proposed_change.setting)
+        if topic.proposed_change
+        else None,
     )
 
 
@@ -864,12 +916,45 @@ def CastVote(topic_id):
         with LOCK:
             prev_len = len(house.event_log)
             topic = house.topics[topic_id]
+            before = topic.RestartsLeft(g.participant.id, "votes")
             house.CastVote(topic_id, g.participant.id, choice, comment, Now())
             persistence.SaveTopic(conn, topic)
             FlushNewEvents(prev_len)
-    except MeetinghouseError as exc:
-        flash(str(exc))
+        left = topic.RestartsLeft(g.participant.id, "votes")
+        if before == 0:
+            flash("Vote recorded. It counts, but it no longer keeps the Topic open.")
+        elif left == 0:
+            flash("Vote recorded. That was the last of your votes that can keep this Topic open.")
+        else:
+            flash(f"Vote recorded. Your votes can keep this Topic open {left} more time{'s' if left != 1 else ''}.")
+    except (MeetinghouseError, KeyError) as exc:
+        flash(str(exc) if isinstance(exc, MeetinghouseError) else "No such Topic.")
     return redirect(url_for("TopicDetail", topic_id=topic_id))
+
+
+@app.route("/topic/<topic_id>/post", methods=["POST"])
+def AddPost(topic_id):
+    guard = RequireLogin()
+    if guard:
+        return guard
+    text = request.form.get("text", "")
+    try:
+        with LOCK:
+            prev_len = len(house.event_log)
+            topic = house.topics[topic_id]
+            post = house.AddPost(topic_id, g.participant.id, text, Now())
+            persistence.SaveTopic(conn, topic)
+            FlushNewEvents(prev_len)
+        if post.near_identical_to is not None:
+            flash(
+                f"This sounds close to what you said on {DayFilter(post.near_identical_to)}. "
+                "It's posted, but it won't keep the Topic open."
+            )
+        elif not post.extended:
+            flash("Posted. Your posts no longer keep this Topic open, but everyone can read it.")
+    except (MeetinghouseError, KeyError) as exc:
+        flash(str(exc) if isinstance(exc, MeetinghouseError) else "No such Topic.")
+    return redirect(url_for("TopicDetail", topic_id=topic_id) + "#discussion")
 
 
 @app.route("/topic/<topic_id>/revoke", methods=["POST"])
@@ -887,6 +972,29 @@ def Revoke(topic_id):
     except MeetinghouseError as exc:
         flash(str(exc))
     return redirect(url_for("TopicDetail", topic_id=topic_id))
+
+
+@app.route("/current-rules")
+def CurrentRules():
+    """Every setting, its current level, its fixed limits, and any open Topic about it."""
+    rows = []
+    last_changes = persistence.LastRuleChanges(conn)
+    for subsection in Subsection:
+        rule = house.current_rules[subsection]
+        for setting, label in SETTING_NAMES.items():
+            low, high = SETTING_LIMITS[(subsection, setting)]
+            rows.append(
+                {
+                    "subsection": subsection,
+                    "label": label,
+                    "current": getattr(rule, setting),
+                    "low": low,
+                    "high": high,
+                    "open_topic": house.OpenRulesTopicFor(subsection, setting),
+                    "last_changed": last_changes.get((subsection.value, setting)),
+                }
+            )
+    return render_template("current_rules.html", rows=rows, rules=house.current_rules)
 
 
 @app.route("/archive")

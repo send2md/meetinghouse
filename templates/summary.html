@@ -3,6 +3,22 @@
 {% block content %}
 <h1>Daily Summary — {{ summary.date }}</h1>
 
+{% for d in summary.dismissals_today %}
+<div class="card notice">
+  <h3>{{ participant_name(d.participant_id) }} was dismissed today</h3>
+  <p><a href="{{ url_for('TopicDetail', topic_id=d.topic_id) }}">Read the Jury Topic</a>.
+    {% if d.effects %}Their votes and Reader status came off these open Topics, whose quiet time restarted:{% else %}They weren't taking part in any open Topic.{% endif %}</p>
+  {% if d.effects %}
+  <ul>
+    {% for e in d.effects %}
+      <li><a href="{{ url_for('TopicDetail', topic_id=e.topic_id) }}">{{ e.title }}</a> <span class="muted">({{ e.subsection }})</span>
+        — Yes {{ e.votes.Yes }}{% if e.subsection == "Forum" %} · Abstain {{ e.votes.Abstain }}{% endif %} · No {{ e.votes.No }} · Dismissed {{ e.dismissed }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endfor %}
+
 <div class="card">
   <h3>Open Topics</h3>
   {% if not summary.open %}<p class="muted">None.</p>{% endif %}
@@ -10,7 +26,7 @@
     <p>
       <a href="{{ url_for('TopicDetail', topic_id=item.topic_id) }}">{{ item.title }}</a>
       <span class="muted">({{ item.subsection }}, {{ item.age|humanage }} old)</span>
-      — Yes {{ item.votes.Yes }} · Abstain {{ item.votes.Abstain }} · No {{ item.votes.No }}
+      — Yes {{ item.votes.Yes }}{% if item.subsection == "Forum" %} · Abstain {{ item.votes.Abstain }}{% endif %} · No {{ item.votes.No }}{% if item.dismissed %} · Dismissed {{ item.dismissed }}{% endif %}
     </p>
   {% endfor %}
 </div>

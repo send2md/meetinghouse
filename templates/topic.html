@@ -10,58 +10,118 @@
 </h1>
 <p class="muted">{{ topic.subsection.value }} · opened {{ topic.created_at|fmt }} by {{ participant_name(topic.author_id) }} · {{ readers|length }} reader(s)</p>
 
-{% if topic.description %}<div class="card">{{ topic.description }}</div>{% endif %}
+{% if ask_to_vote %}
+<div class="card notice">
+  <p><strong>Would you like to vote?</strong> You've opened this Topic, so you count as a Reader:
+    if you don't vote, it's harder for the Topic to pass.</p>
+</div>
+{% endif %}
+
+{% if topic.proposed_change %}
+<div class="card">
+  <p><strong>Proposes:</strong> {{ topic.proposed_change.Describe() }} → <strong>{{ topic.proposed_change.value|pct }}</strong>
+    <span class="muted">(it is {{ setting_now|pct }} now)</span></p>
+</div>
+{% elif topic.software_ref %}
+<div class="card">
+  <p><strong>Approves this version of the code:</strong>
+    <a href="https://github.com/send2md/meetinghouse/commit/{{ topic.software_ref }}"><code>{{ topic.software_ref }}</code></a></p>
+</div>
+{% endif %}
+
+{% if topic.description %}<div class="card prewrap">{{ topic.description }}</div>{% endif %}
+
+{% if topic.subsection.value == "Jury" and topic.closed and topic.result.value == "PASSED" %}
+<div class="card notice">
+  <h3>{{ participant_name(topic.target_participant_id) }} was dismissed on {{ topic.closed_at|day }}</h3>
+  {% if topic.dismissal_effects %}
+    <p>Their votes and Reader status were taken off these open Topics, and each Topic's quiet time restarted:</p>
+    <ul>
+    {% for e in topic.dismissal_effects %}
+      <li><a href="{{ url_for('TopicDetail', topic_id=e.topic_id) }}">{{ e.title }}</a>
+        <span class="muted">({{ e.subsection }})</span> — Yes {{ e.votes.Yes }}{% if e.subsection == "Forum" %} · Abstain {{ e.votes.Abstain }}{% endif %} · No {{ e.votes.No }} · Dismissed {{ e.dismissed }}</li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">They weren't taking part in any open Topic.</p>
+  {% endif %}
+</div>
+{% endif %}
 
 {% if topic.HasPoll() %}
 <div class="card">
   <h3>{{ topic.poll_question }}</h3>
   <p class="counts">
     <span class="badge yes">Yes {{ counts[VoteChoice.YES] }}</span>
-    <span class="badge abstain">Abstain {{ counts[VoteChoice.ABSTAIN] }}</span>
+    {% if topic.subsection.value == "Forum" %}<span class="badge abstain">Abstain {{ counts[VoteChoice.ABSTAIN] }}</span>{% endif %}
     <span class="badge no">No {{ counts[VoteChoice.NO] }}</span>
+    {% if dismissed_count %}<span class="badge dismissed">Dismissed {{ dismissed_count }}</span>{% endif %}
   </p>
 
-  {% if not topic.closed %}
+  {% for note in topic.dismissal_notes %}
+    <p class="muted">
+      {% if note.removed_choice %}{{ participant_name(note.participant_id) }}'s {{ note.removed_choice.value }} vote removed{% else %}{{ participant_name(note.participant_id) }} removed from Readers{% endif %}:
+      <a href="{{ url_for('TopicDetail', topic_id=note.jury_topic_id) }}">dismissed by the Jury on {{ note.at|day }}</a>.
+    </p>
+  {% endfor %}
+
+  {% if can_act %}
     <form method="post" action="{{ url_for('CastVote', topic_id=topic.id) }}">
-      <label>Your vote{% if my_vote %} (currently {{ my_vote.choice.value }} — casting again replaces it){% endif %}</label>
+      <label>Your vote{% if my_vote %} (currently {{ my_vote.choice.value }} — voting again replaces it){% endif %}</label>
       <select name="choice" required>
-        <option value="Yes" {% if my_vote and my_vote.choice.value=="Yes" %}selected{% endif %}>Yes</option>
-        <option value="Abstain" {% if my_vote and my_vote.choice.value=="Abstain" %}selected{% endif %}>Abstain</option>
-        <option value="No" {% if my_vote and my_vote.choice.value=="No" %}selected{% endif %}>No</option>
+        {% for choice in topic.AllowedChoices() %}
+          <option value="{{ choice.value }}" {% if my_vote and my_vote.choice == choice %}selected{% endif %}>{{ choice.value }}</option>
+        {% endfor %}
       </select>
-      <label>Comment (required — why you're voting this way)</label>
-      <textarea name="comment" required>{% if my_vote %}{{ my_vote.comment }}{% endif %}</textarea>
-      <p>
-        <input type="submit" value="{% if my_vote %}Re-vote{% else %}Vote{% endif %}">
-        {% if my_vote %}
-        <form class="inline" method="post" action="{{ url_for('Revoke', topic_id=topic.id) }}">
-          <button class="danger" type="submit">Revoke my vote</button>
-        </form>
-        {% endif %}
-      </p>
+      <label>Why you're voting this way (required)</label>
+      <textarea name="comment" required></textarea>
+      <p><input type="submit" value="{% if my_vote %}Vote again{% else %}Vote{% endif %}">
+        <span class="muted">{% if votes_left %}Your votes can keep this Topic open {{ votes_left }} more time{{ 's' if votes_left != 1 }}.{% else %}Your votes count, but no longer keep this Topic open.{% endif %}</span></p>
     </form>
+    {% if my_vote %}
+    <form class="inline" method="post" action="{{ url_for('Revoke', topic_id=topic.id) }}">
+      <button class="secondary" type="submit">Withdraw my vote</button>
+    </form>
+    {% endif %}
   {% endif %}
 </div>
 {% endif %}
 
-<div class="card">
-  <h3>Comments &amp; Votes</h3>
-  {% if not comments %}<p class="muted">None yet.</p>{% endif %}
-  {% for c in comments %}
-    <div class="comment">
-      <div class="meta">
-        {{ participant_name(c.participant_id) }} ·
-        <span class="badge {{ c.choice.value|lower }}">{{ c.choice.value }}</span>
-        {{ c.timestamp|fmt }}
-        {% if c.revoked %}<span class="badge revoked">revoked</span>{% endif %}
-        {% if c.participant_id in dismissed_ids %}<span class="badge dismissed">dismissed</span>{% endif %}
+<div class="card" id="discussion">
+  <h3>Discussion and votes</h3>
+  {% if not entries %}<p class="muted">Nothing yet.</p>{% endif %}
+  {% for e in entries %}
+    {% if e.kind == "vote" %}
+      {% set c = e.record %}
+      <div class="comment">
+        <div class="meta">
+          {{ participant_name(c.participant_id) }} · voted
+          <span class="badge {{ c.choice.value|lower }}">{{ c.choice.value }}</span>
+          {{ c.timestamp|fmt }}
+          {% if c.revoked %}<span class="badge revoked">withdrawn</span>{% endif %}
+          {% if c.removed_by %}<span class="badge dismissed">removed: dismissed</span>{% endif %}
+        </div>
+        <div class="prewrap">{{ c.comment }}</div>
       </div>
-      {% if c.revoked or c.participant_id in dismissed_ids %}
-        <details><summary>show comment</summary>{{ c.comment }}</details>
-      {% else %}
-        {{ c.comment }}
-      {% endif %}
-    </div>
+    {% else %}
+      {% set p = e.post %}
+      <div class="comment">
+        <div class="meta">
+          {{ participant_name(p.participant_id) }} · {{ p.timestamp|fmt }}
+          {% if p.near_identical_to %}<span class="badge revoked">repeats {{ p.near_identical_to|day }}</span>{% endif %}
+        </div>
+        <div class="prewrap">{{ p.text }}</div>
+      </div>
+    {% endif %}
   {% endfor %}
+
+  {% if can_act %}
+    <form method="post" action="{{ url_for('AddPost', topic_id=topic.id) }}">
+      <label>Add to the discussion</label>
+      <textarea name="text" required></textarea>
+      <p><input type="submit" value="Post">
+        <span class="muted">{% if posts_left %}Your posts can keep this Topic open {{ posts_left }} more time{{ 's' if posts_left != 1 }}.{% else %}You can keep posting, but your posts no longer keep this Topic open.{% endif %}</span></p>
+    </form>
+  {% endif %}
 </div>
 {% endblock %}

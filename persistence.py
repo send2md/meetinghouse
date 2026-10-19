@@ -21,11 +21,14 @@ import sqlite3
 from typing import Optional
 
 from meetinghouse import (
+    DiscussionPost,
     Dismissal,
+    DismissalNote,
     Meetinghouse,
     Participant,
     ParticipationForm,
     PollResult,
+    RuleChange,
     RuleConfig,
     Subsection,
     Topic,
@@ -95,11 +98,26 @@ CREATE TABLE IF NOT EXISTS event_log (
 """
 
 
+# Columns added to `topics` after its first release; added in place to
+# databases created before them (see Connect).
+_TOPIC_COLUMNS_ADDED = {
+    "software_ref": "TEXT",
+    "posts_json": "TEXT NOT NULL DEFAULT '[]'",
+    "restarts_json": "TEXT NOT NULL DEFAULT '{}'",
+    "dismissal_notes_json": "TEXT NOT NULL DEFAULT '[]'",
+    "dismissal_effects_json": "TEXT NOT NULL DEFAULT '[]'",
+}
+
+
 def Connect(path):
-    """Open (and, if needed, initialize) the SQLite store at `path`."""
+    """Open (and, if needed, initialize or upgrade) the SQLite store at `path`."""
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(topics)")}
+    for column, kind in _TOPIC_COLUMNS_ADDED.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE topics ADD COLUMN {column} {kind}")
     conn.commit()
     return conn
 
@@ -182,6 +200,7 @@ def _VotesToJson(votes):
                     "timestamp": _Iso(r.timestamp),
                     "revoked": r.revoked,
                     "revoked_at": _Iso(r.revoked_at),
+                    "removed_by": r.removed_by,
                 }
                 for r in records
             ]
@@ -201,10 +220,83 @@ def _VotesFromJson(raw):
                 timestamp=_ParseDateTime(r["timestamp"]),
                 revoked=r["revoked"],
                 revoked_at=_ParseDateTime(r["revoked_at"]),
+                removed_by=r.get("removed_by"),
             )
             for r in records
         ]
     return votes
+
+
+def _ChangeToJson(change):
+    if change is None:
+        return None
+    return json.dumps({"subsection": change.subsection.value, "setting": change.setting, "value": change.value})
+
+
+def _ChangeFromJson(raw):
+    """A one-setting change; Topics saved before those existed (a whole RuleConfig) load as None."""
+    if not raw:
+        return None
+    data = json.loads(raw)
+    if "setting" not in data:
+        return None
+    return RuleChange(subsection=Subsection(data["subsection"]), setting=data["setting"], value=data["value"])
+
+
+def _PostsToJson(posts):
+    return json.dumps(
+        [
+            {
+                "id": p.id,
+                "participant_id": p.participant_id,
+                "text": p.text,
+                "timestamp": _Iso(p.timestamp),
+                "extended": p.extended,
+                "near_identical_to": _Iso(p.near_identical_to),
+            }
+            for p in posts
+        ]
+    )
+
+
+def _PostsFromJson(raw):
+    return [
+        DiscussionPost(
+            id=p["id"],
+            participant_id=p["participant_id"],
+            text=p["text"],
+            timestamp=_ParseDateTime(p["timestamp"]),
+            extended=p["extended"],
+            near_identical_to=_ParseDateTime(p["near_identical_to"]),
+        )
+        for p in json.loads(raw or "[]")
+    ]
+
+
+def _NotesToJson(notes):
+    return json.dumps(
+        [
+            {
+                "participant_id": n.participant_id,
+                "jury_topic_id": n.jury_topic_id,
+                "at": _Iso(n.at),
+                "removed_choice": n.removed_choice.value if n.removed_choice else None,
+            }
+            for n in notes
+        ]
+    )
+
+
+def _NotesFromJson(raw):
+    return [
+        DismissalNote(
+            participant_id=n["participant_id"],
+            jury_topic_id=n["jury_topic_id"],
+            at=_ParseDateTime(n["at"]),
+            removed_choice=VoteChoice(n["removed_choice"]) if n["removed_choice"] else None,
+        )
+        for n in json.loads(raw or "[]")
+    ]
 
 
 def SaveParticipant(conn, participant: Participant):
@@ -230,14 +322,19 @@ def SaveTopic(conn, topic: Topic):
         INSERT INTO topics (
             id, subsection, author_id, title, description, poll_question, created_at,
             rules_json, target_subsection, target_participant_id, proposed_rule_config_json,
-            readers_json, votes_json, closed, closed_at, result, last_activity_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            readers_json, votes_json, closed, closed_at, result, last_activity_at,
+            software_ref, posts_json, restarts_json, dismissal_notes_json, dismissal_effects_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
             poll_question = excluded.poll_question,
             readers_json = excluded.readers_json,
             votes_json = excluded.votes_json,
+            posts_json = excluded.posts_json,
+            restarts_json = excluded.restarts_json,
+            dismissal_notes_json = excluded.dismissal_notes_json,
+            dismissal_effects_json = excluded.dismissal_effects_json,
             closed = excluded.closed,
             closed_at = excluded.closed_at,
             result = excluded.result,
@@ -254,13 +351,18 @@ def SaveTopic(conn, topic: Topic):
             json.dumps(_RuleToDict(topic.rules)),
             topic.target_subsection.value if topic.target_subsection else None,
             topic.target_participant_id,
-            json.dumps(_RuleToDict(topic.proposed_rule_config)) if topic.proposed_rule_config else None,
+            _ChangeToJson(topic.proposed_change),
             _ReadersToJson(topic.readers),
             _VotesToJson(topic.votes),
             int(topic.closed),
             _Iso(topic.closed_at),
             topic.result.value if topic.result else None,
             _Iso(topic.last_activity_at),
+            topic.software_ref,
+            _PostsToJson(topic.posts),
+            json.dumps(topic.restarts),
+            _NotesToJson(topic.dismissal_notes),
+            json.dumps(topic.dismissal_effects),
         ),
     )
     conn.commit()
@@ -294,6 +396,16 @@ def LogEvent(conn, entry: dict):
         (kind, _Iso(at), json.dumps(entry, default=str)),
     )
     conn.commit()
+
+
+def LastRuleChanges(conn):
+    """When each (subsection name, setting) was last changed by a Rules vote."""
+    last = {}
+    for row in conn.execute("SELECT at, data_json FROM event_log WHERE kind = 'rule_changed' ORDER BY seq"):
+        data = json.loads(row["data_json"])
+        if "setting" in data:
+            last[(data.get("target_subsection"), data["setting"])] = _ParseDateTime(row["at"])
+    return last
 
 
 def SetCredentials(conn, participant_id: str, username: str, password_hash: str):
@@ -421,11 +533,14 @@ def LoadHouse(conn) -> Meetinghouse:
             rules=_RuleFromDict(json.loads(row["rules_json"])),
             target_subsection=Subsection(row["target_subsection"]) if row["target_subsection"] else None,
             target_participant_id=row["target_participant_id"],
-            proposed_rule_config=_RuleFromDict(json.loads(row["proposed_rule_config_json"]))
-            if row["proposed_rule_config_json"]
-            else None,
+            proposed_change=_ChangeFromJson(row["proposed_rule_config_json"]),
+            software_ref=row["software_ref"],
             readers=_ReadersFromJson(row["readers_json"]),
             votes=_VotesFromJson(row["votes_json"]),
+            posts=_PostsFromJson(row["posts_json"]),
+            restarts=json.loads(row["restarts_json"] or "{}"),
+            dismissal_notes=_NotesFromJson(row["dismissal_notes_json"]),
+            dismissal_effects=json.loads(row["dismissal_effects_json"] or "[]"),
             closed=bool(row["closed"]),
             closed_at=_ParseDateTime(row["closed_at"]),
             result=PollResult(row["result"]) if row["result"] else None,

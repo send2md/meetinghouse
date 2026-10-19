@@ -2,47 +2,68 @@
 {% block title %}New Topic — {{ subsection.value }}{% endblock %}
 {% block content %}
 <h1>New {{ subsection.value }} Topic</h1>
+
+{% if duplicate %}
+<div class="card notice">
+  <p>{{ duplicate.message }}</p>
+  <p><a class="button" href="{{ url_for('TopicDetail', topic_id=duplicate.topic_id) }}">Go to that Topic</a></p>
+</div>
+{% endif %}
+
 <div class="card">
   <form method="post">
     {% if subsection.value == "Jury" %}
       <label>Participant this concerns</label>
       <select name="target_participant_id" required>
         {% for p in participants %}
-          <option value="{{ p.id }}">{{ p.name }}</option>
+          <option value="{{ p.id }}" {% if form.get('target_participant_id') == p.id %}selected{% endif %}>{{ p.name }}</option>
         {% endfor %}
       </select>
-      <p class="muted">The Topic title and Poll ("Do we dismiss them?") are set automatically.</p>
-      <label>Description (optional — why you're raising this)</label>
-      <textarea name="description"></textarea>
-    {% else %}
-      <label>Title</label>
-      <input type="text" name="title" required>
-      <label>Description (optional)</label>
-      <textarea name="description"></textarea>
+      <p class="muted">The title and the Poll ("Do we dismiss them?") are set automatically. Votes are Yes or No.</p>
+      <label>Why you're raising this</label>
+      <textarea name="description">{{ form.get('description', '') }}</textarea>
 
-      {% if subsection.value == "Rules" %}
-        <label>Which subsection does this Rule change address?</label>
-        <select name="target_subsection" required>
-          {% for s in Subsection %}
-            <option value="{{ s.value }}">{{ s.value }}</option>
+    {% elif subsection.value == "Rules" %}
+      <p class="muted">A Rules Topic either changes one setting, or approves a change to the software.
+        Votes are Yes or No; to keep things as they are, vote No.</p>
+      <label><input type="radio" name="kind" value="setting" {% if form.get('kind', 'setting') == 'setting' %}checked{% endif %}> Change a setting</label>
+      <label><input type="radio" name="kind" value="software" {% if form.get('kind') == 'software' %}checked{% endif %}> Approve a software change</label>
+
+      <fieldset class="card">
+        <legend>Change a setting</legend>
+        <label>Which setting</label>
+        <select name="setting">
+          {% for s in settings %}
+            <option value="{{ s.key }}" {% if form.get('setting') == s.key %}selected{% endif %}>
+              {{ s.label }} — now {{ s.current|pct }}; this Topic can propose {{ s.step_low|pct }} to {{ s.step_high|pct }}
+            </option>
           {% endfor %}
         </select>
-        <label>Poll question</label>
-        <input type="text" name="poll_question" required value="Adopt this Rule change?">
+        <label>New value (%)</label>
+        <input type="number" name="value" step="0.1" min="0" max="100" value="{{ form.get('value', '') }}">
+        <p class="muted">A setting can move at most 5 points per Topic, and never past its fixed limits.
+          Quiet time and minimum life can't be changed. See <a href="{{ url_for('CurrentRules') }}">the current rules</a>.</p>
+      </fieldset>
 
-        <p class="muted">Proposed values — leave any field blank to keep it unchanged. All fields blank means this Topic is discussion-only (no Rule change if it passes).</p>
-        <label>Quiet time (weeks)</label>
-        <input type="number" step="0.1" name="quiet_time_weeks">
-        <label>Minimum life (weeks)</label>
-        <input type="number" step="0.1" name="min_life_weeks">
-        <label>Voters / Readers must be ≥ (0–1)</label>
-        <input type="number" step="0.01" min="0" max="1" name="voter_fraction">
-        <label>(Yes+Abstain) / (Yes+Abstain+No) must be ≥ (0–1)</label>
-        <input type="number" step="0.01" min="0" max="1" name="approval_fraction">
-      {% else %}
-        <label>Poll question (optional — leave blank for a discussion-only Topic)</label>
-        <input type="text" name="poll_question">
-      {% endif %}
+      <fieldset class="card">
+        <legend>Approve a software change</legend>
+        <label>Title</label>
+        <input type="text" name="title" value="{{ form.get('title', '') }}">
+        <label>GitHub commit id (40 characters)</label>
+        <input type="text" name="software_ref" value="{{ form.get('software_ref', '') }}" spellcheck="false" autocapitalize="off">
+        <p class="muted">If this passes, exactly this version of the code is what may go live.</p>
+      </fieldset>
+
+      <label>Why (optional)</label>
+      <textarea name="description">{{ form.get('description', '') }}</textarea>
+
+    {% else %}
+      <label>Title</label>
+      <input type="text" name="title" required value="{{ form.get('title', '') }}">
+      <label>Description (optional)</label>
+      <textarea name="description">{{ form.get('description', '') }}</textarea>
+      <label>Poll question (optional — leave blank for a discussion-only Topic)</label>
+      <input type="text" name="poll_question" value="{{ form.get('poll_question', '') }}">
     {% endif %}
     <p><input type="submit" value="Create Topic"></p>
   </form>

@@ -24,14 +24,14 @@
     <h2>{{ subsection.value }} <a class="button secondary" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Topic</a></h2>
     {% if items %}
       <table>
-        <tr><th>Topic</th><th>Age</th><th>Readers</th><th>Yes</th><th>Abstain</th><th>No</th></tr>
+        <tr><th>Topic</th><th>Age</th><th>Readers</th><th>Yes</th>{% if subsection.value == "Forum" %}<th>Abstain</th>{% endif %}<th>No</th></tr>
         {% for item in items %}
         <tr>
           <td><a href="{{ url_for('TopicDetail', topic_id=item.topic.id) }}">{{ item.topic.title }}</a></td>
           <td>{{ item.age|humanage }}</td>
           <td>{{ item.readers }}</td>
           <td>{{ item.counts[VoteChoice.YES] if item.counts else '—' }}</td>
-          <td>{{ item.counts[VoteChoice.ABSTAIN] if item.counts else '—' }}</td>
+          {% if subsection.value == "Forum" %}<td>{{ item.counts[VoteChoice.ABSTAIN] if item.counts else '—' }}</td>{% endif %}
           <td>{{ item.counts[VoteChoice.NO] if item.counts else '—' }}</td>
         </tr>
         {% endfor %}
