@@ -34,9 +34,27 @@ def test_page_uses_the_design_words_and_puts_discussion_before_votes(client):
     assert "Forum Committee" in page and "Initiator: Bob Roe" in page and "Pollster: Bob Roe" in page
     assert page.index('id="discussion"') < page.index('id="votes"')
     assert "What is your reason?" in page
-    assert "Would you like to vote?" not in page
     for old_word in ("Topic", "quiet time", "favour"):
         assert old_word not in page, old_word
+
+
+def test_asked_once_each_would_you_like_to_vote(client):
+    test_client, app_module = client
+    people = _Setup(test_client, app_module)
+    no_question = _NewForumConversation(test_client, title="Chairs", question="")
+    with_question = _NewForumConversation(test_client)  # Bob is its Pollster
+    As(test_client, "janedoe", people["jane"][1])
+    assert "Would you like to vote?" in _Text(test_client.get(f"/topic/{with_question}"))
+    assert "Would you like to vote?" not in _Text(test_client.get(f"/topic/{with_question}"))  # only once
+
+    assert "Would you like to vote?" not in _Text(test_client.get(f"/topic/{no_question}"))  # nothing to vote on yet
+    As(test_client, "bob", people["bob"][1])
+    test_client.post(f"/topic/{no_question}/question", data={"question": "Buy 40 chairs?"})
+    As(test_client, "janedoe", people["jane"][1])
+    assert "Would you like to vote?" in _Text(test_client.get(f"/topic/{no_question}"))  # now there is
+
+    importlib.reload(app_module)  # remembered after a restart
+    assert people["jane"][0] in app_module.house.topics[no_question].asked_to_vote
 
 
 def test_any_contactor_can_attach_the_one_question_later(client):

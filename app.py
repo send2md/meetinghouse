@@ -1018,10 +1018,21 @@ def TopicDetail(topic_id):
         abort(404)
     now = Now()
 
+    # Ask each Member once per Conversation, the first time they open it
+    # with a Question they haven't voted on, whether they'd like to vote.
+    ask_to_vote = False
     if g.participant.IsActive(now) and not topic.closed:
         with LOCK:
             try:
-                if house.MarkRead(topic_id, g.participant.id, now):
+                changed = house.MarkRead(topic_id, g.participant.id, now)
+                if (
+                    topic.HasPoll()
+                    and topic.CurrentVote(g.participant.id) is None
+                    and g.participant.id not in topic.asked_to_vote
+                ):
+                    topic.asked_to_vote.append(g.participant.id)
+                    ask_to_vote = changed = True
+                if changed:
                     persistence.SaveTopic(conn, topic)
             except MeetinghouseError:
                 pass
@@ -1048,6 +1059,7 @@ def TopicDetail(topic_id):
         now=now,
         can_act=can_act,
         ask_question=can_act and not topic.HasPoll(),
+        ask_to_vote=ask_to_vote,
         votes_left=topic.RestartsLeft(g.participant.id, "votes"),
         posts_left=topic.RestartsLeft(g.participant.id, "posts"),
         restart_limit=RESTART_LIMIT,

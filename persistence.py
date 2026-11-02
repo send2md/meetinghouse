@@ -108,6 +108,7 @@ _TOPIC_COLUMNS_ADDED = {
     "dismissal_effects_json": "TEXT NOT NULL DEFAULT '[]'",
     "pollster_id": "TEXT",
     "question_attached_at": "TEXT",
+    "asked_to_vote_json": "TEXT NOT NULL DEFAULT '[]'",
 }
 
 
@@ -326,14 +327,15 @@ def SaveTopic(conn, topic: Topic):
             rules_json, target_subsection, target_participant_id, proposed_rule_config_json,
             readers_json, votes_json, closed, closed_at, result, last_activity_at,
             software_ref, posts_json, restarts_json, dismissal_notes_json, dismissal_effects_json,
-            pollster_id, question_attached_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            pollster_id, question_attached_at, asked_to_vote_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
             poll_question = excluded.poll_question,
             pollster_id = excluded.pollster_id,
             question_attached_at = excluded.question_attached_at,
+            asked_to_vote_json = excluded.asked_to_vote_json,
             readers_json = excluded.readers_json,
             votes_json = excluded.votes_json,
             posts_json = excluded.posts_json,
@@ -370,6 +372,7 @@ def SaveTopic(conn, topic: Topic):
             json.dumps(topic.dismissal_effects),
             topic.pollster_id,
             _Iso(topic.question_attached_at),
+            json.dumps(topic.asked_to_vote),
         ),
     )
     conn.commit()
@@ -554,6 +557,7 @@ def LoadHouse(conn) -> Meetinghouse:
             last_activity_at=_ParseDateTime(row["last_activity_at"]),
             pollster_id=row["pollster_id"],
             question_attached_at=_ParseDateTime(row["question_attached_at"]),
+            asked_to_vote=json.loads(row["asked_to_vote_json"] or "[]"),
         )
         house.topics[topic.id] = topic
 

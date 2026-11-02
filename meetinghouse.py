@@ -388,6 +388,8 @@ class Topic:
     last_activity_at: dt.datetime = field(default=None)
     pollster_id: Optional[str] = None
     question_attached_at: Optional[dt.datetime] = None
+    # Members already asked "Would you like to vote?" here (asked once each).
+    asked_to_vote: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         if self.last_activity_at is None:

@@ -30,6 +30,13 @@
 <p class="muted">No Question has been attached yet, so this Conversation is for Discussion only.</p>
 {% endif %}
 
+{% if ask_to_vote %}
+<div class="card notice">
+  <p><strong>Would you like to vote?</strong> You've opened this Conversation, so you're one of its Contactors.
+    If you don't vote, it's harder for the Question to pass. <a href="#votes">Go to the vote</a></p>
+</div>
+{% endif %}
+
 {% if topic.proposed_change %}
 <div class="card">
   <p><strong>Proposes:</strong> {{ topic.proposed_change.Describe() }} → <strong>{{ topic.proposed_change.value|pct }}</strong>
