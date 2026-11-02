@@ -1,48 +1,52 @@
 {% extends "base.html" %}
-{% block title %}New Topic — {{ subsection.value }}{% endblock %}
+{% block title %}New Conversation — {{ subsection.value }} Committee{% endblock %}
 {% block content %}
-<h1>New {{ subsection.value }} Topic</h1>
+<h1>New Conversation in the {{ subsection.value }} Committee</h1>
 
 {% if duplicate %}
 <div class="card notice">
   <p>{{ duplicate.message }}</p>
-  <p><a class="button" href="{{ url_for('TopicDetail', topic_id=duplicate.topic_id) }}">Go to that Topic</a></p>
+  <p><a class="button" href="{{ url_for('TopicDetail', topic_id=duplicate.topic_id) }}">Go to that Conversation</a></p>
 </div>
 {% endif %}
 
 <div class="card">
   <form method="post">
     {% if subsection.value == "Jury" %}
-      <label>Participant this concerns</label>
+      <label>Member this concerns</label>
       <select name="target_participant_id" required>
         {% for p in participants %}
           <option value="{{ p.id }}" {% if form.get('target_participant_id') == p.id %}selected{% endif %}>{{ p.name }}</option>
         {% endfor %}
       </select>
-      <p class="muted">The title and the Poll ("Do we dismiss them?") are set automatically. Votes are Yes or No.</p>
+      <p class="muted">The Title and the Question ("Do we dismiss them?") are set automatically, and you are its Pollster.
+        Votes are Yes or No.</p>
       <label>Why you're raising this</label>
       <textarea name="description">{{ form.get('description', '') }}</textarea>
 
     {% elif subsection.value == "Rules" %}
-      <p class="muted">A Rules Topic either changes one setting, or approves a change to the software.
-        Votes are Yes or No; to keep things as they are, vote No.</p>
+      <p class="muted">A Rules Conversation either changes one setting, or approves a change to the software. Its Question
+        is "Adopt this change?", and you are its Pollster. Votes are Yes or No; to keep things as they are, vote No.</p>
       <label><input type="radio" name="kind" value="setting" {% if form.get('kind', 'setting') == 'setting' %}checked{% endif %}> Change a setting</label>
       <label><input type="radio" name="kind" value="software" {% if form.get('kind') == 'software' %}checked{% endif %}> Approve a software change</label>
 
       <fieldset class="card">
         <legend>Change a setting</legend>
-        <label>Which setting</label>
-        <select name="setting">
+        <label>The setting and its new value</label>
+        <select name="change">
+          <option value="">Choose…</option>
           {% for s in settings %}
-            <option value="{{ s.key }}" {% if form.get('setting') == s.key %}selected{% endif %}>
-              {{ s.label }} — now {{ s.current|pct }}; this Topic can propose {{ s.step_low|pct }} to {{ s.step_high|pct }}
-            </option>
+            <optgroup label="{{ s.label }} — now {{ s.current|pct }}">
+              {% for v in s.options %}
+                {% set key = s.key ~ ':' ~ v.percent %}
+                <option value="{{ key }}" {% if form.get('change') == key %}selected{% endif %}>{{ s.label }} → {{ v.percent }}%</option>
+              {% endfor %}
+            </optgroup>
           {% endfor %}
         </select>
-        <label>New value (%)</label>
-        <input type="number" name="value" step="0.1" min="0" max="100" value="{{ form.get('value', '') }}">
-        <p class="muted">A setting can move at most 5 points per Topic, and never past its fixed limits.
-          Quiet time and minimum life can't be changed. See <a href="{{ url_for('CurrentRules') }}">the current rules</a>.</p>
+        <p class="muted">Each vote can move a setting by at most 5% of its current value, and always by at least 1 point,
+          in whole percentages. Every setting stays between 9% and 100%. Minimum Life and Seasoning Time can't be changed.
+          See <a href="{{ url_for('CurrentRules') }}">the current Rules</a>.</p>
       </fieldset>
 
       <fieldset class="card">
@@ -60,12 +64,14 @@
     {% else %}
       <label>Title</label>
       <input type="text" name="title" required value="{{ form.get('title', '') }}">
-      <label>Description (optional)</label>
+      <label>What you'd like to discuss</label>
       <textarea name="description">{{ form.get('description', '') }}</textarea>
-      <label>Poll question (optional — leave blank for a discussion-only Topic)</label>
-      <input type="text" name="poll_question" value="{{ form.get('poll_question', '') }}">
+      <label>Do you want to attach a Question to this Conversation?</label>
+      <input type="text" name="poll_question" value="{{ form.get('poll_question', '') }}" placeholder="Leave this empty to start with Discussion only">
+      <p class="muted">If you attach a Question, you become its Pollster and everyone can vote on it. If you don't, anyone
+        taking part can attach one later. A Conversation has at most one Question.</p>
     {% endif %}
-    <p><input type="submit" value="Create Topic"></p>
+    <p><input type="submit" value="Start this Conversation"></p>
   </form>
 </div>
 {% endblock %}

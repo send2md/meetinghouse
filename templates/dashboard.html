@@ -3,33 +3,36 @@
 {% block content %}
 {% if not activated %}
 <div class="card notice">
-  <h3>Your account isn't activated yet</h3>
-  <p>We're mailing a letter with a one-time code to the address you registered with.
-    You can read along now; once you type in the code, you can vote, comment, and start Topics.</p>
-  <form method="post" action="{{ url_for('AccountActivate') }}">
-    <label>Code from your letter</label>
-    <input type="text" name="code" required autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" style="max-width:14rem;">
-    <input type="submit" value="Activate">
-  </form>
+  <p><strong>You haven't finished joining.</strong> You can read along; once you've added a passkey and passed
+    the ID check you can vote, comment and start Conversations. <a class="button" href="{{ url_for('Join') }}">Finish joining</a></p>
+</div>
+{% elif paused %}
+<div class="card notice">
+  <p><strong>Your membership is paused</strong> until you do your yearly check.
+    <a class="button" href="{{ url_for('Account') }}">I'm still here</a></p>
+</div>
+{% elif renew_soon %}
+<div class="card notice">
+  <p>Your yearly check is due by {{ renew_soon|day }}. <a href="{{ url_for('Account') }}">Do it now</a>.</p>
 </div>
 {% elif not has_passkey %}
 <div class="card notice">
-  <p><strong>Protect your account:</strong> <a href="{{ url_for('Account') }}">add a passkey</a>
-    so that only you can log in, using your device's face, fingerprint, or PIN unlock.</p>
+  <p><strong>Protect your account:</strong> <a href="{{ url_for('Account') }}">add a passkey</a>,
+    so that only you can log in.</p>
 </div>
 {% endif %}
-<h1>Open Topics</h1>
+<h1>Open Conversations</h1>
 {% for subsection, items in open_by_subsection.items() %}
   <div class="card">
-    <h2>{{ subsection.value }} <a class="button secondary" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Topic</a></h2>
+    <h2>{{ subsection.value }} Committee <a class="button secondary" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Conversation</a></h2>
     {% if items %}
       <table>
-        <tr><th>Topic</th><th>Age</th><th>Readers</th><th>Yes</th>{% if subsection.value == "Forum" %}<th>Abstain</th>{% endif %}<th>No</th></tr>
+        <tr><th>Conversation</th><th>Age</th><th>Contactors</th><th>Yes</th>{% if subsection.value == "Forum" %}<th>Abstain</th>{% endif %}<th>No</th></tr>
         {% for item in items %}
         <tr>
           <td><a href="{{ url_for('TopicDetail', topic_id=item.topic.id) }}">{{ item.topic.title }}</a></td>
           <td>{{ item.age|humanage }}</td>
-          <td>{{ item.readers }}</td>
+          <td>{{ item.contactors }}</td>
           <td>{{ item.counts[VoteChoice.YES] if item.counts else '—' }}</td>
           {% if subsection.value == "Forum" %}<td>{{ item.counts[VoteChoice.ABSTAIN] if item.counts else '—' }}</td>{% endif %}
           <td>{{ item.counts[VoteChoice.NO] if item.counts else '—' }}</td>
@@ -37,7 +40,7 @@
         {% endfor %}
       </table>
     {% else %}
-      <p class="muted">No open Topics.</p>
+      <p class="muted">No open Conversations.</p>
     {% endif %}
   </div>
 {% endfor %}

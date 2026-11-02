@@ -1,105 +1,137 @@
-"""Web-level tests for the decision rules: what members actually see and do."""
+"""Web-level tests for the decision rules: what Members actually see and do."""
 
 from __future__ import annotations
 
 import datetime as dt
 import html
+import importlib
 
-from test_app import _Login, client  # noqa: F401  (client is a fixture)
-from test_security import PASSWORD, _ActivatedUser
-
-
-def _As(test_client, username):
-    test_client.get("/logout")
-    _Login(test_client, username, PASSWORD)
+from testkit import As, Join
 
 
-def _SetPasswords(test_client):
-    test_client.post("/account/password", data={"password": PASSWORD, "confirm": PASSWORD})
+def _Text(resp):
+    return html.unescape(resp.data.decode())
 
 
-def _NewForumTopic(test_client, title="Paint the hall", poll="Paint it blue?"):
-    resp = test_client.post("/topic/new/forum", data={"title": title, "poll_question": poll})
+def _NewForumConversation(test_client, title="Paint the hall", question="Paint it blue?"):
+    resp = test_client.post("/topic/new/forum", data={"title": title, "poll_question": question})
     return resp.headers["Location"].rsplit("/", 1)[-1]
 
 
 def _Setup(test_client, app_module):
-    jane = _ActivatedUser(test_client, app_module, "janedoe", "Jane Doe")
-    _SetPasswords(test_client)
+    """Jane and Bob both join; Bob stays logged in. Returns their ids and passkeys."""
+    jane, jane_device = Join(test_client, app_module, "janedoe", "Jane Doe")
     test_client.get("/logout")
-    bob = _ActivatedUser(test_client, app_module, "bob", "Bob Roe")
-    _SetPasswords(test_client)
-    return jane, bob
+    bob, bob_device = Join(test_client, app_module, "bob", "Bob Roe")
+    return {"jane": (jane, jane_device), "bob": (bob, bob_device)}
 
 
-def test_asked_once_would_you_like_to_vote(client):
+def test_page_uses_the_design_words_and_puts_discussion_before_votes(client):
     test_client, app_module = client
     _Setup(test_client, app_module)
-    topic_id = _NewForumTopic(test_client)  # Bob writes it
-    _As(test_client, "janedoe")
-    first = test_client.get(f"/topic/{topic_id}").data
-    assert b"Would you like to vote?" in first
-    second = test_client.get(f"/topic/{topic_id}").data
-    assert b"Would you like to vote?" not in second
+    conversation_id = _NewForumConversation(test_client)
+    page = _Text(test_client.get(f"/topic/{conversation_id}"))
+    assert "Forum Committee" in page and "Initiator: Bob Roe" in page and "Pollster: Bob Roe" in page
+    assert page.index('id="discussion"') < page.index('id="votes"')
+    assert "What is your reason?" in page
+    assert "Would you like to vote?" not in page
+    for old_word in ("Topic", "quiet time", "favour"):
+        assert old_word not in page, old_word
 
 
-def test_vote_receipts_count_down(client):
+def test_any_contactor_can_attach_the_one_question_later(client):
+    test_client, app_module = client
+    people = _Setup(test_client, app_module)
+    conversation_id = _NewForumConversation(test_client, title="Chairs for the hall", question="")
+    page = _Text(test_client.get(f"/topic/{conversation_id}"))
+    assert "Do you want to attach a Question to this Conversation?" in page
+    assert 'name="choice"' not in page  # nothing to vote on yet
+
+    As(test_client, "janedoe", people["jane"][1])
+    page = _Text(test_client.get(f"/topic/{conversation_id}"))
+    assert "Do you want to attach a Question to this Conversation?" in page  # asked of every Contactor
+    resp = test_client.post(f"/topic/{conversation_id}/question", data={"question": "Shall we buy 40 chairs?"}, follow_redirects=True)
+    page = _Text(resp)
+    assert "you are its Pollster" in page and "Shall we buy 40 chairs?" in page
+    assert "Pollster: Jane Doe" in page and "Initiator: Bob Roe" in page
+    assert "Do you want to attach a Question" not in page
+    second = test_client.post(f"/topic/{conversation_id}/question", data={"question": "Or 50?"}, follow_redirects=True)
+    assert "There can be only one." in _Text(second)
+    topic = app_module.house.topics[conversation_id]
+    assert topic.pollster_id == people["jane"][0] and topic.question_attached_at is not None
+
+    importlib.reload(app_module)  # saved and reloaded
+    topic = app_module.house.topics[conversation_id]
+    assert topic.poll_question == "Shall we buy 40 chairs?" and topic.pollster_id == people["jane"][0]
+
+
+def test_vote_needs_a_reason_and_receipts_count_down(client):
     test_client, app_module = client
     _Setup(test_client, app_module)
-    topic_id = _NewForumTopic(test_client)
+    conversation_id = _NewForumConversation(test_client)
+    no_reason = test_client.post(f"/topic/{conversation_id}/vote", data={"choice": "Yes", "comment": " "}, follow_redirects=True)
+    assert "Every vote needs its reason" in _Text(no_reason)
     messages = []
     for i in range(6):
-        resp = test_client.post(f"/topic/{topic_id}/vote", data={"choice": "Yes", "comment": f"reason {i}"}, follow_redirects=True)
-        messages.append(resp.data.decode())
-    assert "can keep this Topic open 4 more times" in messages[0]
-    assert "can keep this Topic open 1 more time." in messages[3]
-    assert "That was the last of your votes that can keep this Topic open" in messages[4]
-    assert "It counts, but it no longer keeps the Topic open" in messages[5]
+        resp = test_client.post(f"/topic/{conversation_id}/vote", data={"choice": "Yes", "comment": f"reason {i}"}, follow_redirects=True)
+        messages.append(_Text(resp))
+    assert "can keep this Conversation open 4 more times" in messages[0]
+    assert "can keep this Conversation open 1 more time." in messages[3]
+    assert "That was the last of your votes that can keep this Conversation open" in messages[4]
+    assert "It counts, but it no longer keeps the Conversation open" in messages[5]
 
 
 def test_only_forum_offers_abstain(client):
     test_client, app_module = client
-    jane, bob = _Setup(test_client, app_module)
-    forum_id = _NewForumTopic(test_client)
+    people = _Setup(test_client, app_module)
+    forum_id = _NewForumConversation(test_client)
     assert b'<option value="Abstain"' in test_client.get(f"/topic/{forum_id}").data
-    resp = test_client.post("/topic/new/jury", data={"target_participant_id": jane})
+    resp = test_client.post("/topic/new/jury", data={"target_participant_id": people["jane"][0]})
     jury_id = resp.headers["Location"].rsplit("/", 1)[-1]
     page = test_client.get(f"/topic/{jury_id}").data
     assert b'<option value="Abstain"' not in page and b'<option value="No"' in page
 
 
-def test_discussion_keeps_paragraphs_and_flags_repeats(client):
+def test_comments_keep_paragraphs_and_flag_repeats(client):
     test_client, app_module = client
     _Setup(test_client, app_module)
-    topic_id = _NewForumTopic(test_client)
-    text = "First paragraph about colour.\n\nSecond paragraph about cost."
-    test_client.post(f"/topic/{topic_id}/post", data={"text": text})
-    page = test_client.get(f"/topic/{topic_id}").data.decode()
-    assert '<div class="prewrap">First paragraph about colour.\n\nSecond paragraph about cost.</div>' in page.replace("\r", "")
+    conversation_id = _NewForumConversation(test_client)
+    text = "First paragraph about color.\n\nSecond paragraph about cost."
+    test_client.post(f"/topic/{conversation_id}/post", data={"text": text})
+    page = test_client.get(f"/topic/{conversation_id}").data.decode()
+    assert '<div class="prewrap">First paragraph about color.\n\nSecond paragraph about cost.</div>' in page.replace("\r", "")
     again = test_client.post(
-        f"/topic/{topic_id}/post", data={"text": "First paragraph about colour. Second paragraph about cost!"}, follow_redirects=True
-    ).data.decode()
-    again = html.unescape(again)
+        f"/topic/{conversation_id}/post", data={"text": "First paragraph about color. Second paragraph about cost!"}, follow_redirects=True
+    )
+    again = _Text(again)
     assert "This sounds close to what you said on" in again
-    assert "It's posted, but it won't keep the Topic open." in again
+    assert "It's posted, but it won't keep the Conversation open." in again
 
 
-def test_rules_topic_form_enforces_one_small_step(client):
+def test_rules_form_offers_only_the_allowed_whole_percentages(client):
     test_client, app_module = client
     _Setup(test_client, app_module)
-    too_far = test_client.post("/topic/new/rules", data={"kind": "setting", "setting": "Forum:approval_fraction", "value": "80"})
-    assert b"at most 5 points at a time" in too_far.data
-    ok = test_client.post("/topic/new/rules", data={"kind": "setting", "setting": "Forum:approval_fraction", "value": "70"})
+    form = _Text(test_client.get("/topic/new/rules"))
+    for percent in range(63, 71):
+        assert f'value="Forum:approval_fraction:{percent}"' in form
+    assert 'value="Forum:approval_fraction:62"' not in form and 'value="Forum:approval_fraction:71"' not in form
+    assert 'value="Forum:voter_fraction:24"' in form and 'value="Forum:voter_fraction:26"' in form
+    assert 'value="Forum:voter_fraction:23"' not in form
+
+    too_far = test_client.post("/topic/new/rules", data={"kind": "setting", "change": "Forum:approval_fraction:80"})
+    assert "can propose 63% to 70%" in _Text(too_far)
+    ok = test_client.post("/topic/new/rules", data={"kind": "setting", "change": "Forum:approval_fraction:70"})
     assert ok.status_code == 302
-    topic_page = test_client.get(ok.headers["Location"]).data.decode()
-    assert "Change Forum approval from 66.7% to 70%" in topic_page
-    assert '<option value="Abstain"' not in topic_page
-    dup = test_client.post("/topic/new/rules", data={"kind": "setting", "setting": "Forum:approval_fraction", "value": "62"}).data.decode()
-    assert "already an open Topic about Forum approval" in dup
-    assert ok.headers["Location"] in dup  # link to the existing Topic
-    rules_page = test_client.get("/current-rules").data.decode()
-    assert "Change Forum approval from 66.7% to 70%" in rules_page
-    assert "51% to 100%" in rules_page and "10% to 49%" in rules_page
+    page = _Text(test_client.get(ok.headers["Location"]))
+    assert "Change Forum Approval from 66.7% to 70%" in page and "Adopt this change?" in page
+    assert '<option value="Abstain"' not in page
+    dup = _Text(test_client.post("/topic/new/rules", data={"kind": "setting", "change": "Forum:approval_fraction:64"}))
+    assert "already an open Conversation about Forum Approval" in dup
+    assert ok.headers["Location"] in dup
+    rules_page = _Text(test_client.get("/current-rules"))
+    assert "Change Forum Approval from 66.7% to 70%" in rules_page
+    assert "63% to 70%" in rules_page and "24% to 26%" in rules_page
+    assert "between 9% and 100%" in rules_page
 
 
 def test_software_change_needs_a_full_commit_id(client):
@@ -114,32 +146,42 @@ def test_software_change_needs_a_full_commit_id(client):
 
 def test_dismissal_shows_named_note_tally_and_announcement(client, monkeypatch):
     test_client, app_module = client
-    jane, bob = _Setup(test_client, app_module)
-    forum_id = _NewForumTopic(test_client)  # by Bob
-    _As(test_client, "janedoe")
+    people = _Setup(test_client, app_module)
+    forum_id = _NewForumConversation(test_client)  # by Bob
+    As(test_client, "janedoe", people["jane"][1])
     test_client.post(f"/topic/{forum_id}/vote", data={"choice": "No", "comment": "Too dark."})
-    _As(test_client, "bob")
-    jury = test_client.post("/topic/new/jury", data={"target_participant_id": jane})
+    As(test_client, "bob", people["bob"][1])
+    jury = test_client.post("/topic/new/jury", data={"target_participant_id": people["jane"][0]})
     jury_id = jury.headers["Location"].rsplit("/", 1)[-1]
     test_client.post(f"/topic/{jury_id}/vote", data={"choice": "Yes", "comment": "Repeated cussing."})
-    dup = test_client.post("/topic/new/jury", data={"target_participant_id": jane}).data.decode()
-    assert "already an open Jury Topic about Jane Doe" in dup
+    dup = _Text(test_client.post("/topic/new/jury", data={"target_participant_id": people["jane"][0]}))
+    assert "already an open Jury Conversation about Jane Doe" in dup
 
     later = app_module.Now() + dt.timedelta(weeks=6)
     monkeypatch.setattr(app_module, "Now", lambda: later)
     app_module.RunTick()
 
-    page = test_client.get(f"/topic/{forum_id}").data.decode()
+    page = _Text(test_client.get(f"/topic/{forum_id}"))
     assert "Dismissed 1" in page
-    assert "Jane Doe&#39;s No vote removed" in page or "Jane Doe's No vote removed" in page
+    assert "Jane Doe's No vote removed" in page
     assert f"/topic/{jury_id}" in page
-    jury_page = test_client.get(f"/topic/{jury_id}").data.decode()
+    jury_page = _Text(test_client.get(f"/topic/{jury_id}"))
     assert "Jane Doe was dismissed on" in jury_page and "Paint the hall" in jury_page
-    summary = test_client.get("/summary").data.decode()
+    assert "Seasoning Time restarted" in jury_page
+    summary = _Text(test_client.get("/summary"))
     assert "Jane Doe was dismissed today" in summary and "Paint the hall" in summary
 
-    # Saved and reloaded: the notes and effects survive a restart.
-    import importlib
     importlib.reload(app_module)
     topic = app_module.house.topics[forum_id]
     assert topic.dismissal_notes and app_module.house.topics[jury_id].dismissal_effects
+
+
+def test_no_old_words_on_the_main_pages(client):
+    test_client, app_module = client
+    _Setup(test_client, app_module)
+    _NewForumConversation(test_client)
+    for path in ("/", "/subsection/forum", "/subsection/rules", "/subsection/jury", "/current-rules", "/summary",
+                 "/archive?q=hall", "/topic/new/forum", "/topic/new/rules", "/topic/new/jury", "/account"):
+        page = _Text(test_client.get(path))
+        for old_word in ("Topic", "Participant", "quiet time", "Quiet time", "favour", "Poll question", "turnout"):
+            assert old_word not in page, (path, old_word)

@@ -9,13 +9,13 @@ it real time and real people, and keeps SQLite in sync.
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
 import os
 import re
 import secrets
 import sqlite3
 import threading
+import time
 
 from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
 from webauthn import (
@@ -32,14 +32,18 @@ from webauthn.helpers.structs import (
     ResidentKeyRequirement,
     UserVerificationRequirement,
 )
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash
 
+import idcheck
+import mailer
 import persistence
 import security
 import tick_runner
 from meetinghouse import (
     RESTART_LIMIT,
     SETTING_LIMITS,
+    AllowedRange,
+    AllowedValues,
     SETTING_NAMES,
     DuplicateTopic,
     MeetinghouseError,
@@ -53,11 +57,9 @@ DB_PATH = os.environ.get("MEETINGHOUSE_DB", os.path.join(os.path.dirname(__file_
 ADMIN_PASSWORD = os.environ.get("MEETINGHOUSE_ADMIN_PASSWORD", "admin")
 TICK_INTERVAL_SECONDS = int(os.environ.get("MEETINGHOUSE_TICK_SECONDS", "300"))
 
-# Self-registration photo uploads live outside ~/html, next to
-# the SQLite file, so they're never web-accessible except through the
-# admin-gated AdminParticipantImage route below.
+# Members' verified photos live outside ~/html, next to the SQLite
+# file, and are served through the MemberPhoto route.
 UPLOAD_DIR = os.environ.get("MEETINGHOUSE_UPLOADS", os.path.join(os.path.dirname(DB_PATH), "uploads"))
-ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg"}
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -93,9 +95,11 @@ def FlushNewEvents(prev_len):
 
 
 def RunTick():
-    """Close every eligible Topic/Poll and persist the resulting changes."""
+    """Close every eligible Conversation and persist the resulting changes."""
     with LOCK:
-        return tick_runner.RunTick(house, conn, Now())
+        closed = tick_runner.RunTick(house, conn, Now())
+        tick_runner.SendRenewalReminders(house, conn, Now())
+        return closed
 
 
 def SchedulerLoop():
@@ -110,33 +114,6 @@ def SchedulerLoop():
 def StartScheduler():
     thread = threading.Thread(target=SchedulerLoop, daemon=True)
     thread.start()
-
-
-def _AllowedImage(filename):
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
-
-
-def _ImageMimeType(filename):
-    """The MIME subtype for a data: URI — "jpg" isn't a registered one, "jpeg" is."""
-    ext = filename.rsplit(".", 1)[1].lower()
-    return "jpeg" if ext == "jpg" else ext
-
-
-def _SaveUpload(file_storage, participant_id, field_name):
-    """Save an uploaded photo under UPLOAD_DIR and return (path, raw bytes).
-
-    Returning the bytes too lets the caller embed the same image inline
-    (as a data: URI) on the one-time printable confirmation page, without
-    a second disk read.
-    """
-    ext = file_storage.filename.rsplit(".", 1)[1].lower()
-    data = file_storage.read()
-    participant_dir = os.path.join(UPLOAD_DIR, participant_id)
-    os.makedirs(participant_dir, exist_ok=True)
-    dest = os.path.join(participant_dir, f"{field_name}.{ext}")
-    with open(dest, "wb") as f:
-        f.write(data)
-    return dest, data
 
 
 def _SuggestUsername(base):
@@ -232,7 +209,7 @@ def Dashboard():
             continue
         counts = house.EffectiveVoteCounts(topic, now)
         open_by_subsection[topic.subsection].append(
-            {"topic": topic, "counts": counts, "age": now - topic.created_at, "readers": len(house.EffectiveReaders(topic, now))}
+            {"topic": topic, "counts": counts, "age": now - topic.created_at, "contactors": len(house.EffectiveReaders(topic, now))}
         )
     for items in open_by_subsection.values():
         items.sort(key=lambda item: item["topic"].created_at)
@@ -241,9 +218,19 @@ def Dashboard():
         open_by_subsection=open_by_subsection,
         now=now,
         activated=security.IsActivated(conn, g.participant.id),
-        pending_code=security.PendingCode(conn, g.participant.id),
+        paused=security.IsActivated(conn, g.participant.id) and not g.participant.IsParticipant(now),
+        renew_soon=_RenewalDue(g.participant, now),
         has_passkey=security.HasPasskeys(conn, g.participant.id),
     )
+
+
+def _RenewalDue(participant, now):
+    """The renewal date, if it falls within the next 30 days."""
+    latest = participant.LatestFormDate()
+    if latest is None:
+        return None
+    due = latest + dt.timedelta(days=365)
+    return due if 0 <= (due - now.date()).days <= 30 else None
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -285,13 +272,12 @@ def _LockedMessage(until):
 def _LoginBlockedReason(participant):
     """Why this (correctly identified) person still can't log in, if anything.
 
-    Someone still waiting for their activation letter CAN log in — they
-    need to, to type in the code — they just can't take part until then.
+    People still joining, and members whose yearly check has lapsed
+    (paused), CAN log in: they need to, to finish joining or renew.
+    They just can't vote, post or start Topics until then.
     """
     if participant is None:
         return "That account no longer exists."
-    if security.IsActivated(conn, participant.id) and not participant.IsParticipant(Now()):
-        return "Your participation form has lapsed. Please send a fresh one."
     return None
 
 
@@ -300,10 +286,15 @@ def _CompleteLogin(participant, username):
     session.pop("pending_username", None)
     session["participant_id"] = participant.id
     security.ClearFailures(conn, _UserKey(username))
+    previous = security.RecordLogin(conn, participant.id, Now())
+    if previous is None:
+        flash("This is your first login.")
+    else:
+        flash(f"You last logged in on {previous:%B} {previous.day}, {previous.year} at {previous:%H:%M} UTC. If that wasn't you, use account recovery.")
 
 
 def _Activate(participant):
-    """Activation counts as signing the participation form, as registering used to."""
+    """Joining counts as signing the participation form for a year."""
     with LOCK:
         security.MarkActivated(conn, participant.id, Now())
         participant.SignForm(signed_date=Now().date())
@@ -369,7 +360,7 @@ def LoginClaim():
 
 @app.route("/register/start", methods=["POST"])
 def RegisterStart():
-    """Claim `username` for a new Participant, or bounce back if it's (now) taken."""
+    """Claim `username` for a new Member, or bounce back if it's (now) taken."""
     username = request.form.get("username", "").strip()
     if not username:
         flash("Choose a login.")
@@ -382,47 +373,37 @@ def RegisterStart():
 
 @app.route("/register", methods=["GET", "POST"])
 def Register():
-    """The self-service "you are a new Participant" form: no admin involved.
+    """Step one of joining: name, email and town. No password, ever.
 
-    Collects everything the printed, mailed-in form needs (see
-    register_complete.html): a name, a password the Participant chooses,
-    and the identity details a Quaker Meeting wants on that paper form
-    (address, age) plus a photo, uploaded here and printed back out on
-    the confirmation page so the same image goes in the envelope. The
-    address matters most: the activation letter is mailed there.
+    The account is created straight away but can't take part until the
+    person has added a passkey and passed the ID check (see Join).
     """
     username = session.get("pending_username")
     if not username:
-        flash("Start from the login page to register.")
+        flash("Start from the login page to join.")
         return redirect(url_for("Login"))
 
     if request.method == "POST":
         name = request.form.get("name", "").strip()
-        password = request.form.get("password", "")
-        address = request.form.get("address", "").strip()
-        age_raw = request.form.get("age", "").strip()
-        photo = request.files.get("photo")
-
+        email = request.form.get("email", "").strip()
+        town = request.form.get("town", "").strip()
+        zip_code = request.form.get("zip", "").strip()
         errors = []
         if not name:
-            errors.append("Whole real name is required.")
-        if len(password) < 8:
-            errors.append("Password must be at least 8 characters.")
-        if not address:
-            errors.append("Address is required.")
-        if not age_raw.isdigit():
-            errors.append("Age must be a whole number.")
-        if not photo or not photo.filename or not _AllowedImage(photo.filename):
-            errors.append("A photo (jpg or png) is required.")
+            errors.append("Your whole real name is required.")
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            errors.append("A working email address is required: it's how you get back in if you lose your device.")
+        if not town:
+            errors.append("Your town is required.")
+        if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z \-]{1,9}", zip_code):
+            errors.append("Your ZIP code (or postal code) is required.")
+        if not request.form.get("agree"):
+            errors.append("Please tick the box to show you've read how your name, photo and ID are handled.")
         if errors:
             for error in errors:
                 flash(error)
-            return render_template("register.html", username=username)
+            return render_template("register.html", username=username, form=request.form, providers=idcheck.GetProviders())
 
-        # The availability check and the insert both happen under LOCK, so a
-        # second request racing on the same username can't slip past the
-        # check between here and SetCredentials; the UNIQUE constraint is
-        # still a backstop in case this ever runs with more than one worker.
         with LOCK:
             if persistence.GetCredentialsByUsername(conn, username) is not None:
                 flash("That login was just taken. Please choose another.")
@@ -430,37 +411,209 @@ def Register():
                     "username_taken.html", taken_username=username, suggestion=_SuggestUsername(username)
                 )
             participant = house.RegisterParticipant(name)
-            # No form is signed yet: that happens when they type in the code
-            # from the activation letter mailed to the address below.
             persistence.SaveParticipant(conn, participant)
             security.CreatePendingStatus(conn, participant.id)
             try:
-                persistence.SetCredentials(
-                    conn, participant.id, username, generate_password_hash(password, method="pbkdf2:sha256")
-                )
+                persistence.SetCredentials(conn, participant.id, username, security.NO_PASSWORD)
             except sqlite3.IntegrityError:
                 flash("That login was just taken. Please choose another.")
                 return render_template(
                     "username_taken.html", taken_username=username, suggestion=_SuggestUsername(username)
                 )
-            photo_path, photo_bytes = _SaveUpload(photo, participant.id, "photo")
-            persistence.SaveParticipantProfile(
-                conn, participant.id, address, int(age_raw), photo_path, Now()
-            )
+            security.UpdateMember(conn, participant.id, email=email, town=town, zip=zip_code)
 
         session.pop("pending_username", None)
         session["participant_id"] = participant.id
-        return render_template(
-            "register_complete.html",
-            participant=participant,
-            username=username,
-            address=address,
-            age=age_raw,
-            photo_data_uri=f"data:image/{_ImageMimeType(photo.filename)};base64,"
-            + base64.b64encode(photo_bytes).decode("ascii"),
-        )
+        return redirect(url_for("Join"))
 
-    return render_template("register.html", username=username)
+    return render_template("register.html", username=username, form={}, providers=idcheck.GetProviders())
+
+
+@app.route("/join")
+def Join():
+    """Steps two and three of joining: add a passkey, then pass the ID check."""
+    guard = RequireLogin()
+    if guard:
+        return guard
+    if security.IsActivated(conn, g.participant.id):
+        return redirect(url_for("Dashboard"))
+    latest = security.LatestIdSession(conn, g.participant.id, idcheck.JOIN)
+    return render_template(
+        "join.html",
+        has_passkey=security.HasPasskeys(conn, g.participant.id),
+        latest=latest,
+        providers=idcheck.GetProviders(),
+    )
+
+
+def _StartIdCheck(purpose):
+    """Start an ID check with the approved company the Member chose."""
+    if not idcheck.GetProviders():
+        flash("ID checks aren't available yet, so joining and renewing are paused. Please try again later.")
+        return None
+    provider = idcheck.GetProvider(request.form.get("provider") or None)
+    if provider is None:
+        flash("Choose one of the ID-check companies on the list.")
+        return None
+    session_id = security.StartIdSession(conn, g.participant.id, purpose, provider.name, Now())
+    return_url = _SiteAddress() + url_for("IdCheckReturn", session_id=session_id)
+    try:
+        target, reference = provider.Start(session_id, g.participant.id, purpose, return_url, url_for)
+    except idcheck.NotAvailable as exc:
+        flash(str(exc))
+        return None
+    if reference:
+        security.SetIdSessionReference(conn, session_id, reference)
+    return target
+
+
+@app.route("/join/idcheck", methods=["POST"])
+def JoinIdCheck():
+    guard = RequireLogin()
+    if guard:
+        return guard
+    if security.IsActivated(conn, g.participant.id):
+        return redirect(url_for("Dashboard"))
+    if not security.HasPasskeys(conn, g.participant.id):
+        flash("Add your passkey first, so only you can log in to the account you're about to verify.")
+        return redirect(url_for("Join"))
+    target = _StartIdCheck(idcheck.JOIN)
+    return redirect(target or url_for("Join"))
+
+
+@app.route("/account/renew", methods=["POST"])
+def RenewIdCheck():
+    """The yearly "I'm still here": a live selfie matched to the member's face."""
+    guard = RequireLogin()
+    if guard:
+        return guard
+    if not security.IsActivated(conn, g.participant.id):
+        return redirect(url_for("Join"))
+    target = _StartIdCheck(idcheck.RENEWAL)
+    return redirect(target or url_for("Account"))
+
+
+def ApplyIdResult(result: idcheck.IdResult):
+    """Act on an ID-check outcome, whichever service it came from. Returns the session row."""
+    row = security.GetIdSession(conn, result.session_id)
+    if row is None or row["status"] != "pending":
+        return row
+    participant = house.participants.get(row["participant_id"])
+    if participant is None:
+        return row
+    now = Now()
+    security.FinishIdSession(conn, result.session_id, result.outcome, result.reference, now)
+    if result.outcome != idcheck.APPROVED:
+        return security.GetIdSession(conn, result.session_id)
+
+    if result.selfie:
+        participant_dir = os.path.join(UPLOAD_DIR, participant.id)
+        os.makedirs(participant_dir, exist_ok=True)
+        path = os.path.join(participant_dir, f"photo.{result.selfie_ext}")
+        with open(path, "wb") as f:
+            f.write(result.selfie)
+        security.UpdateMember(conn, participant.id, photo_path=path)
+    security.UpdateMember(
+        conn, participant.id, verified_at=now, verified_country=result.country, verified_ref=result.reference
+    )
+    member = security.GetMember(conn, participant.id)
+    if row["purpose"] == idcheck.JOIN:
+        _Activate(participant)
+        mailer.Send(
+            member["email"],
+            "Welcome to Meetinghouse",
+            f"Dear {participant.name},\n\nYour ID check passed and your Meetinghouse membership is active. "
+            f"You can now take part in Conversations, comment, vote and start Conversations at {_SiteAddress()}.\n\n"
+            "Once a year we'll ask you to confirm you're still here with a quick selfie.\n\nMeetinghouse",
+        )
+    else:
+        with LOCK:
+            participant.SignForm(signed_date=now.date())
+            persistence.SaveParticipant(conn, participant)
+        security.UpdateMember(conn, participant.id, reminders_sent="")
+    return security.GetIdSession(conn, result.session_id)
+
+
+@app.route("/idcheck/practice/<session_id>", methods=["GET", "POST"])
+def PracticeIdCheck(session_id):
+    """The stand-in ID check for local testing. Unreachable unless config chooses it."""
+    provider = idcheck.GetProvider("practice")
+    if provider is None:
+        abort(404)
+    row = security.GetIdSession(conn, session_id)
+    if row is None:
+        abort(404)
+    if request.method == "POST":
+        outcome = request.form.get("outcome")
+        if outcome not in (idcheck.APPROVED, idcheck.DECLINED, idcheck.DUPLICATE):
+            abort(400)
+        ApplyIdResult(
+            idcheck.IdResult(
+                session_id=session_id,
+                outcome=outcome,
+                reference=f"practice-{session_id[:8]}",
+                country="Practice",
+                selfie=idcheck.PRACTICE_SELFIE,
+                selfie_ext="png",
+            )
+        )
+        return redirect(url_for("IdCheckReturn", session_id=session_id))
+    return render_template("idcheck_practice.html", row=row)
+
+
+@app.route("/idcheck/return/<session_id>")
+def IdCheckReturn(session_id):
+    """Where the ID-check service sends the person back to."""
+    row = security.GetIdSession(conn, session_id)
+    if row is None:
+        abort(404)
+    provider = idcheck.GetProvider(row["provider"])
+    if row["status"] == "pending" and provider is not None:
+        try:
+            result = provider.Fetch(row)
+        except Exception as exc:  # the webhook will still deliver it
+            app.logger.info("Couldn't fetch ID-check result yet: %s", exc)
+            result = None
+        if result is not None:
+            with LOCK:
+                row = ApplyIdResult(result)
+    return render_template("idcheck_return.html", row=row)
+
+
+@app.route("/idcheck/didit/webhook", methods=["POST"])
+def DiditWebhook():
+    """Didit's signed notice that a check finished. Anything unsigned is refused."""
+    provider = idcheck.GetProvider("didit")
+    if provider is None:
+        abort(404)
+    body = provider.VerifyWebhook(request.get_data(), request.headers, time.time())
+    if body is None:
+        return jsonify(error="bad signature"), 401
+    metadata = body.get("metadata") or {}
+    row = security.GetIdSession(conn, metadata.get("meetinghouse_session", "")) or security.FindIdSessionByReference(
+        conn, body.get("session_id", "")
+    )
+    if row is None:
+        return jsonify(ok=True, note="unknown session")
+    decision = dict(body.get("decision") or {})
+    decision.setdefault("status", body.get("status", ""))
+    decision.setdefault("session_id", body.get("session_id", ""))
+    result = provider.Interpret(row["id"], row["purpose"], decision)
+    if result is not None:
+        with LOCK:
+            ApplyIdResult(result)
+    return jsonify(ok=True)
+
+
+@app.route("/photo/<participant_id>")
+def MemberPhoto(participant_id):
+    """A member's verified selfie. Public, like their name."""
+    if participant_id not in house.participants:
+        abort(404)
+    path = security.GetMember(conn, participant_id)["photo_path"]
+    if not path or not os.path.isfile(path):
+        abort(404)
+    return send_file(path)
 
 
 # --- Mailed codes, passkeys and the Account page ------------------------------
@@ -482,43 +635,81 @@ def _SiteAddress():
     return _Origins()[0]
 
 
-@app.route("/login/code", methods=["GET", "POST"])
-def LoginCode():
-    """Log in (and activate, or recover) with the one-time code from a letter."""
+@app.route("/login/recover", methods=["GET", "POST"])
+def LoginRecover():
+    """Lost your device? Ask for a recovery code by email; it works 48 hours later."""
     username = session.get("login_username")
     if not username:
         return redirect(url_for("Login"))
     row = persistence.GetCredentialsByUsername(conn, username)
     if row is None:
         return redirect(url_for("Login"))
-
+    member = security.GetMember(conn, row["participant_id"])
     if request.method == "POST":
-        key = _UserKey(username)
-        locked = security.LockedUntil(conn, key, Now())
-        if locked:
-            flash(_LockedMessage(locked))
-            return render_template("login_code.html", username=username)
-        participant = house.participants.get(row["participant_id"])
-        purpose = security.RedeemCode(conn, row["participant_id"], request.form.get("code", ""), Now())
-        if purpose is None or participant is None:
-            locked = security.RecordFailure(conn, key, Now())
-            flash(_LockedMessage(locked) if locked else "That code didn't match. Check the letter and try again.")
-            return render_template("login_code.html", username=username)
-        if purpose == security.ACTIVATION and not security.IsActivated(conn, participant.id):
-            _Activate(participant)
-        reason = _LoginBlockedReason(participant)
-        if reason:
-            flash(reason)
-            return render_template("login_code.html", username=username)
-        _CompleteLogin(participant, username)
-        if purpose == security.ACTIVATION:
-            flash(f"Welcome, {participant.name}. Your account is activated.")
-        else:
-            flash(f"Welcome back, {participant.name}.")
-        flash("Next, add a passkey below so that only you can log in from now on.")
-        return redirect(url_for("Account"))
+        if not member["email"]:
+            flash("There's no email address on this account, so it can't be recovered by email.")
+            return redirect(url_for("LoginRecover"))
+        token, code = security.RequestRecovery(conn, row["participant_id"], Now())
+        usable = Now() + security.RECOVERY_WAIT
+        mailer.Send(
+            member["email"],
+            "Someone asked to recover your Meetinghouse login",
+            f"Someone asked to recover the Meetinghouse login \"{username}\".\n\n"
+            f"If this wasn't you, cancel it now: {_SiteAddress()}{url_for('CancelRecovery', token=token)}\n\n"
+            f"If it was you: from {usable:%B} {usable.day} at {usable:%H:%M} UTC (48 hours from now, a safety wait), "
+            f"go to {_SiteAddress()}, type your user name, choose \"Lost your device?\" and enter this code: "
+            f"{security.FormatCode(code)}\n\nThe code works once and expires after 7 days.\n\nMeetinghouse",
+        )
+        flash("We've emailed you a recovery code. For your safety it starts working in 48 hours.")
+        return redirect(url_for("LoginRecover"))
+    return render_template(
+        "login_recover.html",
+        username=username,
+        has_email=bool(member["email"]),
+        pending=security.PendingRecovery(conn, row["participant_id"]),
+    )
 
-    return render_template("login_code.html", username=username)
+
+@app.route("/login/code", methods=["POST"])
+def LoginCode():
+    """Use the emailed recovery code (after the wait): logs in and clears the lost passkeys."""
+    username = session.get("login_username")
+    row = persistence.GetCredentialsByUsername(conn, username) if username else None
+    if row is None:
+        return redirect(url_for("Login"))
+    key = _UserKey(username)
+    locked = security.LockedUntil(conn, key, Now())
+    if locked:
+        flash(_LockedMessage(locked))
+        return redirect(url_for("LoginRecover"))
+    outcome = security.UseRecoveryCode(conn, row["participant_id"], request.form.get("code", ""), Now())
+    if outcome == "too_soon":
+        pending = security.PendingRecovery(conn, row["participant_id"])
+        flash(f"That code is right, but it only starts working on {pending['usable_from']:%B} {pending['usable_from'].day} at {pending['usable_from']:%H:%M} UTC.")
+        return redirect(url_for("LoginRecover"))
+    if outcome != "ok":
+        locked = security.RecordFailure(conn, key, Now())
+        flash(_LockedMessage(locked) if locked else "That code didn't match. Check the email and try again.")
+        return redirect(url_for("LoginRecover"))
+    participant = house.participants.get(row["participant_id"])
+    reason = _LoginBlockedReason(participant)
+    if reason:
+        flash(reason)
+        return redirect(url_for("Login"))
+    security.RemoveAllPasskeys(conn, participant.id)  # the lost device must not work any more
+    _CompleteLogin(participant, username)
+    flash("You're back in. Your old passkeys were removed: add a passkey on this device now so you can log in next time.")
+    return redirect(url_for("Account"))
+
+
+@app.route("/recover/cancel/<token>")
+def CancelRecovery(token):
+    participant_id = security.CancelRecovery(conn, token)
+    if participant_id is None:
+        return render_template("message.html", title="Nothing to cancel",
+                               text="That recovery request was already used, cancelled or replaced.")
+    return render_template("message.html", title="Recovery cancelled",
+                           text="Nobody can use that recovery code now. Your login is unchanged.")
 
 
 @app.route("/login/passkey")
@@ -588,36 +779,32 @@ def Account():
         return guard
     participant_id = g.participant.id
     creds = persistence.GetCredentialsForParticipant(conn, participant_id)
+    member = security.GetMember(conn, participant_id)
+    latest = g.participant.LatestFormDate()
     return render_template(
         "account.html",
         username=creds["username"] if creds else "",
         activated=security.IsActivated(conn, participant_id),
-        pending_code=security.PendingCode(conn, participant_id),
         passkeys=security.ListPasskeys(conn, participant_id),
         has_password=bool(creds) and creds["password_hash"] != security.NO_PASSWORD,
+        member=member,
+        renew_by=(latest + dt.timedelta(days=365)) if latest else None,
+        paused=security.IsActivated(conn, participant_id) and not g.participant.IsParticipant(Now()),
+        providers=idcheck.GetProviders(),
     )
 
 
-@app.route("/account/activate", methods=["POST"])
-def AccountActivate():
+@app.route("/account/details", methods=["POST"])
+def AccountDetails():
     guard = RequireLogin()
     if guard:
         return guard
-    creds = persistence.GetCredentialsForParticipant(conn, g.participant.id)
-    key = _UserKey(creds["username"])
-    locked = security.LockedUntil(conn, key, Now())
-    if locked:
-        flash(_LockedMessage(locked))
-        return redirect(request.referrer or url_for("Account"))
-    purpose = security.RedeemCode(conn, g.participant.id, request.form.get("code", ""), Now())
-    if purpose is None:
-        locked = security.RecordFailure(conn, key, Now())
-        flash(_LockedMessage(locked) if locked else "That code didn't match. Check the letter and try again.")
-        return redirect(request.referrer or url_for("Account"))
-    security.ClearFailures(conn, key)
-    if not security.IsActivated(conn, g.participant.id):
-        _Activate(g.participant)
-    flash("Your account is activated. Next, add a passkey so that only you can log in.")
+    email = request.form.get("email", "").strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        flash("Please give a working email address.")
+        return redirect(url_for("Account"))
+    security.UpdateMember(conn, g.participant.id, email=email)
+    flash("Saved.")
     return redirect(url_for("Account"))
 
 
@@ -674,7 +861,10 @@ def PasskeyRegisterVerify():
         label,
         Now(),
     )
-    flash(f"Passkey “{label}” added. From now on you log in with it; your password no longer works.")
+    if not security.IsActivated(conn, g.participant.id):
+        flash(f"Passkey \u201c{label}\u201d added. Next: the ID check.")
+        return jsonify(ok=True, redirect=url_for("Join"))
+    flash(f"Passkey \u201c{label}\u201d added. From now on you log in with it.")
     return jsonify(ok=True, redirect=url_for("Account"))
 
 
@@ -683,35 +873,13 @@ def PasskeyRemove():
     guard = RequireLogin()
     if guard:
         return guard
-    security.RemovePasskey(conn, g.participant.id, request.form.get("credential_id", ""))
-    if security.HasPasskeys(conn, g.participant.id):
-        flash("Passkey removed.")
-    else:
-        flash("Passkey removed. You have no passkeys left, so your password logs you in again.")
-    return redirect(url_for("Account"))
-
-
-@app.route("/account/password", methods=["POST"])
-def AccountPassword():
-    """Set a new password — only meaningful while the account has no passkey."""
-    guard = RequireLogin()
-    if guard:
-        return guard
-    if security.HasPasskeys(conn, g.participant.id):
-        flash("You log in with a passkey, so there's no password to change.")
-        return redirect(url_for("Account"))
-    password = request.form.get("password", "")
-    if len(password) < 8:
-        flash("Password must be at least 8 characters.")
-        return redirect(url_for("Account"))
-    if password != request.form.get("confirm", ""):
-        flash("The two passwords didn't match.")
-        return redirect(url_for("Account"))
     creds = persistence.GetCredentialsForParticipant(conn, g.participant.id)
-    persistence.SetCredentials(
-        conn, g.participant.id, creds["username"], generate_password_hash(password, method="pbkdf2:sha256")
-    )
-    flash("New password saved.")
+    has_password = creds["password_hash"] != security.NO_PASSWORD
+    if len(security.ListPasskeys(conn, g.participant.id)) <= 1 and not has_password:
+        flash("That's your only passkey, so it's your only way to log in. Add another passkey first.")
+        return redirect(url_for("Account"))
+    security.RemovePasskey(conn, g.participant.id, request.form.get("credential_id", ""))
+    flash("Passkey removed.")
     return redirect(url_for("Account"))
 
 
@@ -778,7 +946,7 @@ def NewTopic(name):
                 if error:
                     flash(error)
                     return Form()
-                title = None  # the engine names it, e.g. "Change Forum approval from 66.7% to 70%"
+                title = None  # the engine names it, e.g. "Change Forum Approval from 66.7% to 70%"
         elif subsection is Subsection.JURY:
             target_participant_id = request.form.get("target_participant_id") or None
 
@@ -810,7 +978,7 @@ def NewTopic(name):
 
 
 def _SettingChoices():
-    """Every changeable setting, its current value, and how far one Topic may move it."""
+    """Every changeable setting, its current value, and every value one vote may move it to."""
     choices = []
     for subsection in Subsection:
         for setting, label in SETTING_NAMES.items():
@@ -821,30 +989,22 @@ def _SettingChoices():
                     "key": f"{subsection.value}:{setting}",
                     "label": f"{subsection.value} {label}",
                     "current": current,
-                    "low": low,
-                    "high": high,
-                    "step_low": max(low, current - 0.05),
-                    "step_high": min(high, current + 0.05),
+                    "options": [{"percent": round(v * 100)} for v in AllowedValues(current, low, high)],
                 }
             )
     return choices
 
 
 def _ParseRuleChange(form):
-    """Read "which setting" and "new value (%)" from the form into a RuleChange."""
-    key = form.get("setting", "")
+    """Read the chosen setting and new whole-percent value, e.g. "Forum:approval_fraction:63"."""
     try:
-        subsection_name, setting = key.split(":", 1)
+        subsection_name, setting, percent = form.get("change", "").split(":")
         subsection = Subsection(subsection_name)
+        value = int(percent) / 100
     except ValueError:
-        return None, "Choose which setting this Topic changes."
+        return None, "Choose which setting this Conversation changes, and its new value."
     if setting not in SETTING_NAMES:
-        return None, "Choose which setting this Topic changes."
-    raw = form.get("value", "").strip().rstrip("%")
-    try:
-        value = round(float(raw) / 100, 4)
-    except ValueError:
-        return None, "Give the new value as a percentage, for example 70."
+        return None, "Choose which setting this Conversation changes, and its new value."
     return RuleChange(subsection=subsection, setting=setting, value=value), None
 
 
@@ -858,17 +1018,15 @@ def TopicDetail(topic_id):
         abort(404)
     now = Now()
 
-    first_visit = False
     if g.participant.IsActive(now) and not topic.closed:
         with LOCK:
             try:
-                first_visit = house.MarkRead(topic_id, g.participant.id, now)
-                if first_visit:
+                if house.MarkRead(topic_id, g.participant.id, now):
                     persistence.SaveTopic(conn, topic)
             except MeetinghouseError:
                 pass
 
-    # Votes (with their comments) and discussion posts, in the order they happened.
+    # Comments and votes (each with its reason), in the order they happened.
     entries = []
     for history in topic.votes.values():
         for record in history:
@@ -886,10 +1044,10 @@ def TopicDetail(topic_id):
         my_vote=my_vote,
         counts=house.EffectiveVoteCounts(topic, now) if topic.HasPoll() else None,
         dismissed_count=house.DismissedCount(topic, now),
-        readers=house.EffectiveReaders(topic, now),
+        contactors=house.EffectiveReaders(topic, now),
         now=now,
         can_act=can_act,
-        ask_to_vote=first_visit and topic.HasPoll() and my_vote is None and can_act,
+        ask_question=can_act and not topic.HasPoll(),
         votes_left=topic.RestartsLeft(g.participant.id, "votes"),
         posts_left=topic.RestartsLeft(g.participant.id, "posts"),
         restart_limit=RESTART_LIMIT,
@@ -922,13 +1080,13 @@ def CastVote(topic_id):
             FlushNewEvents(prev_len)
         left = topic.RestartsLeft(g.participant.id, "votes")
         if before == 0:
-            flash("Vote recorded. It counts, but it no longer keeps the Topic open.")
+            flash("Vote recorded. It counts, but it no longer keeps the Conversation open.")
         elif left == 0:
-            flash("Vote recorded. That was the last of your votes that can keep this Topic open.")
+            flash("Vote recorded. That was the last of your votes that can keep this Conversation open.")
         else:
-            flash(f"Vote recorded. Your votes can keep this Topic open {left} more time{'s' if left != 1 else ''}.")
+            flash(f"Vote recorded. Your votes can keep this Conversation open {left} more time{'s' if left != 1 else ''}.")
     except (MeetinghouseError, KeyError) as exc:
-        flash(str(exc) if isinstance(exc, MeetinghouseError) else "No such Topic.")
+        flash(str(exc) if isinstance(exc, MeetinghouseError) else "No such Conversation.")
     return redirect(url_for("TopicDetail", topic_id=topic_id))
 
 
@@ -948,13 +1106,35 @@ def AddPost(topic_id):
         if post.near_identical_to is not None:
             flash(
                 f"This sounds close to what you said on {DayFilter(post.near_identical_to)}. "
-                "It's posted, but it won't keep the Topic open."
+                "It's posted, but it won't keep the Conversation open."
             )
         elif not post.extended:
-            flash("Posted. Your posts no longer keep this Topic open, but everyone can read it.")
+            flash("Posted. Your Comments no longer keep this Conversation open, but everyone can read them.")
     except (MeetinghouseError, KeyError) as exc:
-        flash(str(exc) if isinstance(exc, MeetinghouseError) else "No such Topic.")
+        flash(str(exc) if isinstance(exc, MeetinghouseError) else "No such Conversation.")
     return redirect(url_for("TopicDetail", topic_id=topic_id) + "#discussion")
+
+
+@app.route("/topic/<topic_id>/question", methods=["POST"])
+def AttachQuestion(topic_id):
+    """Attach the one Question to a Conversation that has none. The asker is its Pollster."""
+    guard = RequireLogin()
+    if guard:
+        return guard
+    try:
+        with LOCK:
+            prev_len = len(house.event_log)
+            topic = house.topics[topic_id]
+            house.AttachQuestion(topic_id, g.participant.id, request.form.get("question", ""), Now())
+            persistence.SaveTopic(conn, topic)
+            FlushNewEvents(prev_len)
+        flash(
+            f"Your Question is attached and you are its Pollster. Everyone can vote on it now, "
+            f"and the Conversation stays open at least {topic.rules.min_life.days // 7} weeks."
+        )
+    except (MeetinghouseError, KeyError) as exc:
+        flash(str(exc) if isinstance(exc, MeetinghouseError) else "No such Conversation.")
+    return redirect(url_for("TopicDetail", topic_id=topic_id))
 
 
 @app.route("/topic/<topic_id>/revoke", methods=["POST"])
@@ -976,7 +1156,7 @@ def Revoke(topic_id):
 
 @app.route("/current-rules")
 def CurrentRules():
-    """Every setting, its current level, its fixed limits, and any open Topic about it."""
+    """Every setting, its current level, how far one vote may move it, and any open Conversation about it."""
     rows = []
     last_changes = persistence.LastRuleChanges(conn)
     for subsection in Subsection:
@@ -990,6 +1170,8 @@ def CurrentRules():
                     "current": getattr(rule, setting),
                     "low": low,
                     "high": high,
+                    "step_low": AllowedRange(getattr(rule, setting), low, high)[0],
+                    "step_high": AllowedRange(getattr(rule, setting), low, high)[1],
                     "open_topic": house.OpenRulesTopicFor(subsection, setting),
                     "last_changed": last_changes.get((subsection.value, setting)),
                 }
@@ -1039,148 +1221,23 @@ def Admin():
         return guard
     now = Now()
     participants = sorted(house.participants.values(), key=lambda p: p.name)
-    login_info = {
-        p.id: {
-            "activated": security.IsActivated(conn, p.id),
-            "pending_code": security.PendingCode(conn, p.id),
-            "passkeys": len(security.ListPasskeys(conn, p.id)),
-        }
-        for p in participants
-    }
-    waiting = [p for p in participants if not login_info[p.id]["activated"]]
-    addresses = {}
-    for p in waiting:
-        profile = persistence.GetParticipantProfile(conn, p.id)
-        addresses[p.id] = profile["address"] if profile else ""
+    status = {}
+    for p in participants:
+        if not security.IsActivated(conn, p.id):
+            latest = security.LatestIdSession(conn, p.id, idcheck.JOIN)
+            status[p.id] = "joining" + (f" (ID check {latest['status']})" if latest else "")
+        elif not p.IsParticipant(now):
+            status[p.id] = "paused"
+        else:
+            status[p.id] = "member"
     return render_template(
         "admin.html",
         participants=participants,
         now=now,
         rules=house.current_rules,
-        login_info=login_info,
-        waiting=waiting,
-        addresses=addresses,
+        status=status,
+        passkeys={p.id: len(security.ListPasskeys(conn, p.id)) for p in participants},
     )
-
-
-@app.route("/admin/participant/<participant_id>")
-def AdminParticipantProfile(participant_id):
-    """The self-registration details for one Participant, for manual cross-checking.
-
-    Compare these against whatever arrives in the mail (see Register in
-    this module and register_complete.html) — the admin never had to
-    type in a password to get here, and still can't see one.
-    """
-    guard = RequireAdmin()
-    if guard:
-        return guard
-    participant = house.participants.get(participant_id)
-    if participant is None:
-        abort(404)
-    profile = persistence.GetParticipantProfile(conn, participant_id)
-    creds = persistence.GetCredentialsForParticipant(conn, participant_id)
-    return render_template(
-        "admin_participant.html",
-        participant=participant,
-        profile=profile,
-        username=creds["username"] if creds else "",
-        activated=security.IsActivated(conn, participant_id),
-        pending_code=security.PendingCode(conn, participant_id),
-        passkeys=security.ListPasskeys(conn, participant_id),
-    )
-
-
-@app.route("/admin/participant/<participant_id>/letter", methods=["POST"])
-def AdminLetter(participant_id):
-    """Make a one-time code and show the printable letter that carries it.
-
-    purpose=activation: for someone who registered but isn't activated yet.
-    purpose=recovery: resets their login first — removes their passkeys and
-    turns off their password — so only whoever holds the letter gets back in.
-    The code is shown only on this page; printing a new letter replaces it.
-    """
-    guard = RequireAdmin()
-    if guard:
-        return guard
-    participant = house.participants.get(participant_id)
-    creds = persistence.GetCredentialsForParticipant(conn, participant_id)
-    if participant is None or creds is None:
-        abort(404)
-    purpose = request.form.get("purpose")
-    if purpose not in (security.ACTIVATION, security.RECOVERY):
-        abort(400)
-    if purpose == security.ACTIVATION and security.IsActivated(conn, participant_id):
-        flash(f"{participant.name} is already activated.")
-        return redirect(url_for("AdminParticipantProfile", participant_id=participant_id))
-    if purpose == security.RECOVERY:
-        security.RemoveAllPasskeys(conn, participant_id)
-        persistence.SetCredentials(conn, participant_id, creds["username"], security.NO_PASSWORD)
-        security.ClearFailures(conn, _UserKey(creds["username"]))
-    code = security.IssueCode(conn, participant_id, purpose, Now())
-    profile = persistence.GetParticipantProfile(conn, participant_id)
-    return render_template(
-        "letter.html",
-        participant=participant,
-        username=creds["username"],
-        address=profile["address"] if profile else "",
-        purpose=purpose,
-        code=security.FormatCode(code),
-        expires=security.PendingCode(conn, participant_id)["expires_at"],
-        today=Now().date(),
-        site=_SiteAddress(),
-    )
-
-
-@app.route("/admin/participant/<participant_id>/activate", methods=["POST"])
-def AdminActivate(participant_id):
-    """Activate without a letter, for someone the admin has verified in person."""
-    guard = RequireAdmin()
-    if guard:
-        return guard
-    participant = house.participants.get(participant_id)
-    if participant is None:
-        abort(404)
-    if not security.IsActivated(conn, participant_id):
-        _Activate(participant)
-    flash(f"{participant.name} is activated.")
-    return redirect(url_for("Admin"))
-
-
-@app.route("/admin/participant/<participant_id>/<field>")
-def AdminParticipantImage(participant_id, field):
-    guard = RequireAdmin()
-    if guard:
-        return guard
-    if field != "photo":
-        abort(404)
-    profile = persistence.GetParticipantProfile(conn, participant_id)
-    if profile is None:
-        abort(404)
-    path = profile["photo_path"]
-    if not path or not os.path.isfile(path):
-        abort(404)
-    return send_file(path)
-
-
-@app.route("/admin/sign_form", methods=["POST"])
-def AdminSignForm():
-    guard = RequireAdmin()
-    if guard:
-        return guard
-    participant_id = request.form.get("participant_id")
-    scan_ref = request.form.get("scan_ref", "").strip()
-    participant = house.participants.get(participant_id)
-    if participant is None:
-        flash("No such Participant.")
-        return redirect(url_for("Admin"))
-    if not security.IsActivated(conn, participant_id):
-        flash(f"{participant.name} isn't activated yet. Mail them an activation letter, or activate them in person, first.")
-        return redirect(url_for("Admin"))
-    with LOCK:
-        participant.SignForm(signed_date=Now().date(), scan_ref=scan_ref)
-        persistence.SaveParticipant(conn, participant)
-    flash(f"Recorded a fresh signed form for {participant.name}.")
-    return redirect(url_for("Admin"))
 
 
 @app.route("/admin/tick", methods=["POST"])
@@ -1189,7 +1246,7 @@ def AdminTick():
     if guard:
         return guard
     closed = RunTick()
-    flash(f"Ran Tick(): closed {len(closed)} Topic(s).")
+    flash(f"Ran Tick(): closed {len(closed)} Conversation(s).")
     return redirect(url_for("Admin"))
 
 

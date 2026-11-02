@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Lost your device? — Meetinghouse{% endblock %}
+{% block content %}
+<div class="card" style="max-width:460px;margin:2rem auto;">
+  <h1>Lost your device?</h1>
+  {% if not has_email %}
+    <p>There's no email address on <strong>{{ username }}</strong>, so it can't be recovered by email.</p>
+  {% else %}
+    <p>We'll email a recovery code to the address on <strong>{{ username }}</strong>. For your safety it
+      only starts working <strong>48 hours</strong> later, and the email has a link to cancel it,
+      in case someone else asked.</p>
+    {% if pending %}
+      <p class="muted">A code was emailed on {{ pending.requested_at|fmt }}. It works from {{ pending.usable_from|fmt }}
+        until {{ pending.expires_at|fmt }}.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('LoginRecover') }}">
+      <p><input type="submit" value="{{ 'Email a new code' if pending else 'Email me a recovery code' }}" class="{{ 'secondary' if pending }}"></p>
+    </form>
+    {% if pending %}
+    <form method="post" action="{{ url_for('LoginCode') }}">
+      <label>Code from the email</label>
+      <input type="text" name="code" required autocomplete="one-time-code" autocapitalize="characters" spellcheck="false">
+      <p><input type="submit" value="Log in"></p>
+    </form>
+    {% endif %}
+  {% endif %}
+  <p class="muted">Not {{ username }}? <a href="{{ url_for('Login') }}">Start again</a>.</p>
+</div>
+{% endblock %}

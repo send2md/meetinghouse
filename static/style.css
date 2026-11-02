@@ -118,3 +118,4 @@ textarea { min-height: 5rem; }
 fieldset.card { margin: 0.75rem 0; }
 fieldset.card legend { font-weight: 600; color: var(--accent); padding: 0 0.3rem; }
 code { font-family: "Courier New", monospace; font-size: 0.9em; word-break: break-all; }
+.member-photo { width: 96px; height: 96px; object-fit: cover; border-radius: 50%; float: right; margin-left: 1rem; }

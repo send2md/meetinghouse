@@ -9,8 +9,7 @@
              data-verify="{{ url_for('LoginPasskeyVerify') }}"
              data-status="passkey-status">Log in with passkey</button></p>
   <p id="passkey-status" class="muted" role="status"></p>
-  <p class="muted">Lost the device with your passkey? Ask the administrator to mail you a
-    recovery letter, then <a href="{{ url_for('LoginCode') }}">use the code from your letter</a>.</p>
+  <p class="muted"><a href="{{ url_for('LoginRecover') }}">Lost your device?</a></p>
   <p class="muted">Not {{ username }}? <a href="{{ url_for('Login') }}">Start again</a>.</p>
 </div>
 <script src="{{ url_for('static', filename='passkeys.js') }}"></script>

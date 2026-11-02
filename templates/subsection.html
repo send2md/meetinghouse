@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}{{ subsection.value }} — Meetinghouse{% endblock %}
+{% block title %}{{ subsection.value }} Committee — Meetinghouse{% endblock %}
 {% block content %}
-<h1>{{ subsection.value }}
-  <a class="button" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Topic</a>
+<h1>{{ subsection.value }} Committee
+  <a class="button" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Conversation</a>
 </h1>
 <p class="muted">
-  Minimum life {{ rule.min_life|humanage }} · quiet time {{ rule.quiet_time|humanage }} ·
-  turnout {{ rule.voter_fraction|pct }} · approval {{ rule.approval_fraction|pct }} ·
-  <a href="{{ url_for('CurrentRules') }}">all current rules</a>
+  Minimum Life {{ rule.min_life|humanage }} · Seasoning Time {{ rule.quiet_time|humanage }} ·
+  Threshold {{ rule.voter_fraction|pct }} · Approval {{ rule.approval_fraction|pct }} ·
+  <a href="{{ url_for('CurrentRules') }}">all current Rules</a>
 </p>
 <div class="card">
   {% if rows %}
     <table>
-      <tr><th>Topic</th><th>Status</th><th>Yes</th>{% if subsection.value == "Forum" %}<th>Abstain</th>{% endif %}<th>No</th></tr>
+      <tr><th>Conversation</th><th>Status</th><th>Yes</th>{% if subsection.value == "Forum" %}<th>Abstain</th>{% endif %}<th>No</th></tr>
       {% for row in rows %}
       <tr>
-        <td><a href="{{ url_for('TopicDetail', topic_id=row.topic.id) }}">{{ row.topic.title }}</a></td>
+        <td><a href="{{ url_for('TopicDetail', topic_id=row.topic.id) }}">{{ row.topic.title }}</a>{% if not row.topic.HasPoll() %} <span class="muted">(no Question yet)</span>{% endif %}</td>
         <td>
           {% if row.topic.closed %}
             <span class="badge {{ row.topic.result.value|lower }}">{{ row.topic.result.value }}</span>
@@ -30,7 +30,7 @@
       {% endfor %}
     </table>
   {% else %}
-    <p class="muted">No Topics yet in {{ subsection.value }}.</p>
+    <p class="muted">No Conversations yet in the {{ subsection.value }} Committee.</p>
   {% endif %}
 </div>
 {% endblock %}

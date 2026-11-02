@@ -6,12 +6,12 @@
 {% for d in summary.dismissals_today %}
 <div class="card notice">
   <h3>{{ participant_name(d.participant_id) }} was dismissed today</h3>
-  <p><a href="{{ url_for('TopicDetail', topic_id=d.topic_id) }}">Read the Jury Topic</a>.
-    {% if d.effects %}Their votes and Reader status came off these open Topics, whose quiet time restarted:{% else %}They weren't taking part in any open Topic.{% endif %}</p>
+  <p><a href="{{ url_for('TopicDetail', topic_id=d.topic_id) }}">Read the Jury Conversation</a>.
+    {% if d.effects %}Their votes and Contactor status came off these open Conversations, whose Seasoning Time restarted:{% else %}They weren't taking part in any open Conversation.{% endif %}</p>
   {% if d.effects %}
   <ul>
     {% for e in d.effects %}
-      <li><a href="{{ url_for('TopicDetail', topic_id=e.topic_id) }}">{{ e.title }}</a> <span class="muted">({{ e.subsection }})</span>
+      <li><a href="{{ url_for('TopicDetail', topic_id=e.topic_id) }}">{{ e.title }}</a> <span class="muted">({{ e.subsection }} Committee)</span>
         — Yes {{ e.votes.Yes }}{% if e.subsection == "Forum" %} · Abstain {{ e.votes.Abstain }}{% endif %} · No {{ e.votes.No }} · Dismissed {{ e.dismissed }}</li>
     {% endfor %}
   </ul>
@@ -20,12 +20,12 @@
 {% endfor %}
 
 <div class="card">
-  <h3>Open Topics</h3>
+  <h3>Open Conversations</h3>
   {% if not summary.open %}<p class="muted">None.</p>{% endif %}
   {% for item in summary.open %}
     <p>
       <a href="{{ url_for('TopicDetail', topic_id=item.topic_id) }}">{{ item.title }}</a>
-      <span class="muted">({{ item.subsection }}, {{ item.age|humanage }} old)</span>
+      <span class="muted">({{ item.subsection }} Committee, {{ item.age|humanage }} old)</span>
       — Yes {{ item.votes.Yes }}{% if item.subsection == "Forum" %} · Abstain {{ item.votes.Abstain }}{% endif %} · No {{ item.votes.No }}{% if item.dismissed %} · Dismissed {{ item.dismissed }}{% endif %}
     </p>
   {% endfor %}
@@ -37,7 +37,7 @@
   {% for item in summary.closed_today %}
     <p>
       <a href="{{ url_for('TopicDetail', topic_id=item.topic_id) }}">{{ item.title }}</a>
-      <span class="muted">({{ item.subsection }})</span>
+      <span class="muted">({{ item.subsection }} Committee)</span>
       — <span class="badge {{ item.result|lower }}">{{ item.result }}</span>
     </p>
   {% endfor %}

@@ -4,28 +4,35 @@
 <h1>Your account</h1>
 
 {% if not activated %}
-<div class="card">
-  <h3>Activate your account</h3>
-  <p>To take part, type the code from the activation letter we mail to the address you
-    registered with. This shows the address is really yours.</p>
-  {% if pending_code %}
-    <p class="muted">A letter was prepared on {{ pending_code.issued_at.strftime('%B %-d, %Y') }}.</p>
-  {% else %}
-    <p class="muted">Your letter hasn't been sent yet. It's on its way soon.</p>
+<div class="card notice">
+  <p>You haven't finished joining yet. <a class="button" href="{{ url_for('Join') }}">Finish joining</a></p>
+</div>
+{% else %}
+<div class="card {{ 'notice' if paused }}">
+  <h3>Membership</h3>
+  {% if member['photo_path'] %}<img src="{{ url_for('MemberPhoto', participant_id=current_participant.id) }}" alt="Your photo" class="member-photo">{% endif %}
+  {% if paused %}
+    <p><strong>Your membership is paused</strong> because your yearly check was due on {{ renew_by|day }}.
+      You can read everything, but can't vote or comment until you renew.</p>
+  {% elif renew_by %}
+    <p>Your membership runs until <strong>{{ renew_by|day }}</strong>. Renew any time before then.</p>
   {% endif %}
-  <form method="post" action="{{ url_for('AccountActivate') }}">
-    <label>Code from your letter</label>
-    <input type="text" name="code" required autocomplete="one-time-code" autocapitalize="characters" spellcheck="false">
-    <p><input type="submit" value="Activate"></p>
-  </form>
+  {% if member['verified_at'] %}<p class="muted">Last verified {{ member['verified_at'][:10] }}{% if member['verified_country'] %} · {{ member['verified_country'] }}{% endif %}.</p>{% endif %}
+  {% if providers %}
+    <form method="post" action="{{ url_for('RenewIdCheck') }}">
+      {% include "_choose_provider.html" %}
+      <p><input type="submit" value="I'm still here"> <span class="muted">A quick live selfie, matched to your face. It also updates your photo.</span></p>
+    </form>
+  {% else %}
+    <p class="muted">Renewal is unavailable until ID checks are set up.</p>
+  {% endif %}
 </div>
 {% endif %}
 
 <div class="card">
   <h3>Passkeys</h3>
-  <p>A passkey lets you log in with your phone or computer's face, fingerprint, or PIN
-    unlock. Nobody else can use it, and there's no password to steal or forget.
-    <strong>Once you add a passkey, your password stops working.</strong></p>
+  <p>You log in with a passkey: your phone or computer's face, fingerprint or PIN unlock.
+    Add one on each device you use, so losing one doesn't lock you out.</p>
   {% if passkeys %}
     <table>
       <tr><th>Passkey</th><th>Added</th><th>Last used</th><th></th></tr>
@@ -43,9 +50,8 @@
       </tr>
       {% endfor %}
     </table>
-    <p class="muted">Tip: add a passkey on each device you use, so losing one doesn't lock you out.</p>
   {% else %}
-    <p class="muted">You don't have a passkey yet.</p>
+    <p><strong>You don't have a passkey yet.</strong>{% if has_password %} Until you add one, your old password still works.{% else %} Add one now, or you won't be able to log in next time except by email recovery.{% endif %}</p>
   {% endif %}
   <label for="passkey-label">Name for the new passkey (optional)</label>
   <input type="text" id="passkey-label" placeholder="e.g. My iPhone" maxlength="60">
@@ -58,21 +64,16 @@
 </div>
 
 <div class="card">
-  <h3>Password</h3>
-  {% if passkeys %}
-    <p class="muted">Password login is off because you use a passkey.</p>
-  {% else %}
-    {% if not has_password %}
-      <p><strong>You have no way to log in next time.</strong> Add a passkey above, or set a password here.</p>
-    {% endif %}
-    <form method="post" action="{{ url_for('AccountPassword') }}">
-      <label>New password (at least 8 characters)</label>
-      <input type="password" name="password" required minlength="8" autocomplete="new-password">
-      <label>Type it again</label>
-      <input type="password" name="confirm" required minlength="8" autocomplete="new-password">
-      <p><input type="submit" value="Save password"></p>
-    </form>
-  {% endif %}
+  <h3>Email, town and ZIP code</h3>
+  <form method="post" action="{{ url_for('AccountDetails') }}">
+    <label>Email address <span class="muted">(private; used for reminders and recovery)</span></label>
+    <input type="email" name="email" required value="{{ member['email'] }}">
+    <p><input type="submit" value="Save"></p>
+  </form>
+  <p>Town: <strong>{{ member['town'] }}</strong> · ZIP code: <strong>{{ member['zip'] or '—' }}</strong>
+    <span class="muted">(public, as a rough spot on the map)</span></p>
+  <p class="muted">Moving? Your town and ZIP code decide which local group you belong to, so they change only when you
+    prove your new address with an ID check.</p>
 </div>
 
 <p class="muted">Your user name is <strong>{{ username }}</strong>.</p>

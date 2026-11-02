@@ -106,6 +106,8 @@ _TOPIC_COLUMNS_ADDED = {
     "restarts_json": "TEXT NOT NULL DEFAULT '{}'",
     "dismissal_notes_json": "TEXT NOT NULL DEFAULT '[]'",
     "dismissal_effects_json": "TEXT NOT NULL DEFAULT '[]'",
+    "pollster_id": "TEXT",
+    "question_attached_at": "TEXT",
 }
 
 
@@ -323,12 +325,15 @@ def SaveTopic(conn, topic: Topic):
             id, subsection, author_id, title, description, poll_question, created_at,
             rules_json, target_subsection, target_participant_id, proposed_rule_config_json,
             readers_json, votes_json, closed, closed_at, result, last_activity_at,
-            software_ref, posts_json, restarts_json, dismissal_notes_json, dismissal_effects_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            software_ref, posts_json, restarts_json, dismissal_notes_json, dismissal_effects_json,
+            pollster_id, question_attached_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
             poll_question = excluded.poll_question,
+            pollster_id = excluded.pollster_id,
+            question_attached_at = excluded.question_attached_at,
             readers_json = excluded.readers_json,
             votes_json = excluded.votes_json,
             posts_json = excluded.posts_json,
@@ -363,6 +368,8 @@ def SaveTopic(conn, topic: Topic):
             json.dumps(topic.restarts),
             _NotesToJson(topic.dismissal_notes),
             json.dumps(topic.dismissal_effects),
+            topic.pollster_id,
+            _Iso(topic.question_attached_at),
         ),
     )
     conn.commit()
@@ -545,6 +552,8 @@ def LoadHouse(conn) -> Meetinghouse:
             closed_at=_ParseDateTime(row["closed_at"]),
             result=PollResult(row["result"]) if row["result"] else None,
             last_activity_at=_ParseDateTime(row["last_activity_at"]),
+            pollster_id=row["pollster_id"],
+            question_attached_at=_ParseDateTime(row["question_attached_at"]),
         )
         house.topics[topic.id] = topic
 

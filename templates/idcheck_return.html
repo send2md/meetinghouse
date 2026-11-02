@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}ID check — Meetinghouse{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px;margin:2rem auto;">
+  {% if row['status'] == 'approved' %}
+    <h1>You're in</h1>
+    <p>{% if row['purpose'] == 'join' %}Your ID check passed and your membership is active. Welcome.{% else %}Thank you: your membership is renewed for another year.{% endif %}</p>
+    <p><a class="button" href="{{ url_for('Dashboard') }}">Go to the Dashboard</a></p>
+  {% elif row['status'] == 'duplicate' %}
+    <h1>Already a member</h1>
+    <p>That face already belongs to a Meetinghouse member. Each person can be a member only once.</p>
+  {% elif row['status'] == 'declined' %}
+    <h1>The check didn't pass</h1>
+    <p>You can try again{% if row['purpose'] == 'join' %} from <a href="{{ url_for('Join') }}">Finish joining</a>{% else %} from your <a href="{{ url_for('Account') }}">Account</a>{% endif %}.</p>
+  {% else %}
+    <h1>Waiting for the result</h1>
+    <p>Your ID check is being reviewed. This page updates when it's done.</p>
+    <meta http-equiv="refresh" content="10">
+  {% endif %}
+</div>
+{% endblock %}

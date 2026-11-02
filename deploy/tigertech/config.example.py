@@ -26,3 +26,25 @@ os.environ["MEETINGHOUSE_ORIGINS"] = "https://meetinghouse.ai,https://www.meetin
 
 # The live site is HTTPS: never send the login cookie over plain HTTP.
 os.environ["MEETINGHOUSE_SECURE_COOKIES"] = "1"
+
+
+# --- ID checks ---------------------------------------------------------------
+# The approved ID-check companies Members may choose from, separated by
+# commas. Leave empty until the keys below are filled in: joining is paused
+# until then. NEVER list "practice" here on the live site: it approves anyone.
+os.environ["MEETINGHOUSE_IDCHECK"] = ""   # e.g. "didit"
+
+# Didit (business.didit.me): API & Webhooks, and Workflows.
+os.environ["MEETINGHOUSE_DIDIT_API_KEY"] = ""
+os.environ["MEETINGHOUSE_DIDIT_WEBHOOK_SECRET"] = ""
+os.environ["MEETINGHOUSE_DIDIT_WORKFLOW_JOIN"] = ""      # ID document + live selfie + face search + proof of address
+os.environ["MEETINGHOUSE_DIDIT_WORKFLOW_RENEWAL"] = ""   # live selfie matched to the stored face
+
+# --- Email (welcome, yearly reminders, login recovery) ------------------------
+# Set MEETINGHOUSE_MAIL to "smtp" once the server details below are filled in.
+os.environ["MEETINGHOUSE_MAIL"] = ""
+os.environ["MEETINGHOUSE_SMTP_HOST"] = ""
+os.environ["MEETINGHOUSE_SMTP_PORT"] = "587"
+os.environ["MEETINGHOUSE_SMTP_USER"] = ""
+os.environ["MEETINGHOUSE_SMTP_PASSWORD"] = ""
+os.environ["MEETINGHOUSE_MAIL_FROM"] = "Meetinghouse <hello@meetinghouse.ai>"

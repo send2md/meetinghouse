@@ -1,218 +1,141 @@
-"""Tests for the self-service login/registration flow in app.py.
+"""Tests for logging in and joining: user names, the join form, the front page.
 
-app.py reads its DB path and secrets from environment variables at
-import time and keeps a single in-process `house`/`conn`, so each test
-here reloads the module against a fresh temp database rather than
-sharing state between tests.
+Each test gets a fresh copy of the app on its own database (see conftest.py).
 """
 
 from __future__ import annotations
 
 import importlib
-import io
 
-import pytest
-
-
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("MEETINGHOUSE_DB", str(tmp_path / "test.db"))
-    monkeypatch.setenv("MEETINGHOUSE_ADMIN_PASSWORD", "test-admin-password")
-    monkeypatch.setenv("MEETINGHOUSE_SECRET_KEY", "test-secret-key")
-    monkeypatch.setenv("MEETINGHOUSE_UPLOADS", str(tmp_path / "uploads"))
-
-    import app as app_module
-
-    importlib.reload(app_module)
-    app_module.app.testing = True
-    with app_module.app.test_client() as test_client:
-        yield test_client, app_module
+from testkit import PASSWORD, LegacyMember, PasswordLogin, Pid, Register
 
 
-def _Image(name="photo.jpg"):
-    return (io.BytesIO(b"not really a jpeg, just test bytes"), name)
-
-
-def _Login(test_client, username, password, follow_redirects=True):
-    """Drive the two-step login: username first, then (if found) password."""
-    test_client.post("/login", data={"username": username})
-    return test_client.post("/login/password", data={"password": password}, follow_redirects=follow_redirects)
-
-
-def _Register(test_client, username, name="Jane Doe", password="correct horse battery", **overrides):
-    """Drive the whole /login -> /register flow for a brand-new username."""
-    test_client.post("/login", data={"username": username})
-    data = {
-        "name": name,
-        "password": password,
-        "address": "123 Main St",
-        "age": "30",
-        "photo": _Image("photo.jpg"),
-    }
-    data.update(overrides)
-    return test_client.post("/register", data=data, content_type="multipart/form-data", follow_redirects=True)
-
-
-def _AdminLogin(client):
-    return client.post("/admin/login", data={"password": "test-admin-password"}, follow_redirects=True)
-
-
-def test_unknown_username_goes_straight_to_registration(client):
+def test_unknown_username_goes_straight_to_joining(client):
     test_client, _ = client
     resp = test_client.post("/login", data={"username": "janedoe"}, follow_redirects=True)
-    assert b"janedoe is your login. You are a new Participant." in resp.data
+    assert b"Join Meetinghouse as janedoe" in resp.data
 
 
-def test_login_is_two_separate_steps(client):
-    """Username and password are on separate screens, matching the sketch."""
-    test_client, _ = client
-    _Register(test_client, "janedoe")
-    test_client.get("/logout")
+def test_join_form_asks_for_name_email_town_zip_and_agreement(client):
+    test_client, app_module = client
+    test_client.post("/login", data={"username": "janedoe"})
+    form = test_client.get("/register").data
+    for field in (b'name="name"', b'name="email"', b'name="town"', b'name="zip"', b'name="agree"'):
+        assert field in form
+    assert b'name="password"' not in form  # passkeys only, never a password
+    for word in (b"thumbprint", b"maiden"):
+        assert word not in form.lower()
 
+    resp = test_client.post("/register", data={"name": "", "email": "nope", "town": "", "zip": ""}, follow_redirects=True)
+    text = resp.data.decode()
+    assert "Your whole real name is required." in text
+    assert "A working email address is required" in text
+    assert "Your town is required." in text
+    assert "Your ZIP code (or postal code) is required." in text
+    assert "tick the box" in text
+    assert not app_module.house.participants
+
+
+def test_joining_step_one_creates_the_account_and_goes_to_finish_joining(client):
+    test_client, app_module = client
+    resp = Register(test_client, "janedoe")
+    assert b"Finish joining" in resp.data
+    pid = Pid(app_module)
+    member = app_module.security.GetMember(app_module.conn, pid)
+    assert (member["email"], member["town"], member["zip"]) == ("janedoe@example.com", "Ithaca", "14850")
+    creds = app_module.persistence.GetCredentialsByUsername(app_module.conn, "janedoe")
+    assert creds["password_hash"] == app_module.security.NO_PASSWORD
+
+
+def test_legacy_password_login_is_two_separate_steps(client):
+    test_client, app_module = client
+    LegacyMember(app_module, "olduser")
     username_page = test_client.get("/login")
     assert b"Meetinghouse User Name" in username_page.data
-    assert b'name="password"' not in username_page.data  # no password field yet
-
-    step1 = test_client.post("/login", data={"username": "janedoe"})
-    assert step1.status_code == 302
-    assert step1.headers["Location"].endswith("/login/password")
-
-    password_page = test_client.get("/login/password")
-    assert b"janedoe" in password_page.data
-    assert b'name="password"' in password_page.data
+    assert b'name="password"' not in username_page.data
+    step1 = test_client.post("/login", data={"username": "olduser"})
+    assert step1.status_code == 302 and step1.headers["Location"].endswith("/login/password")
+    assert b'name="password"' in test_client.get("/login/password").data
+    assert b"Welcome, Old User" in PasswordLogin(test_client, "olduser", PASSWORD).data
 
 
-def test_full_registration_creates_a_working_login(client):
+def test_wrong_password_offers_retry_or_new_login(client):
     test_client, app_module = client
-    resp = _Register(test_client, "janedoe")
-    assert b"Welcome, Jane Doe" in resp.data
-    assert b"123 Main St" in resp.data  # printable confirmation shows what was submitted
-    assert b"data:image/jpeg;base64," in resp.data  # photo embedded for printing
-
-    test_client.get("/logout")
-    login_resp = _Login(test_client, "janedoe", "correct horse battery")
-    assert b"Welcome, Jane Doe" in login_resp.data
-
-
-def test_registration_requires_all_fields(client):
-    test_client, _ = client
-    test_client.post("/login", data={"username": "janedoe"})
-    resp = test_client.post(
-        "/register",
-        data={"name": "", "password": "short", "address": "", "age": "not-a-number"},
-        content_type="multipart/form-data",
-        follow_redirects=True,
-    )
-    assert b"Whole real name is required" in resp.data
-    assert b"at least 8 characters" in resp.data
-    assert b"Age must be a whole number" in resp.data
-    assert b"photo" in resp.data.lower()
-
-
-def test_known_username_wrong_password_offers_retry_or_new_login(client):
-    test_client, _ = client
-    _Register(test_client, "janedoe")
-    test_client.get("/logout")
-
-    resp = _Login(test_client, "janedoe", "nope")
+    LegacyMember(app_module, "olduser")
+    resp = PasswordLogin(test_client, "olduser", "nope")
     assert b"that password didn" in resp.data.lower()
     assert b"I made a mistake, try again" in resp.data
     assert b"This is a new login" in resp.data
-
-    # "I made a mistake, try again" goes straight back to the password step,
-    # not all the way back to typing the username again.
-    retry = test_client.post("/login/password", data={"password": "correct horse battery"}, follow_redirects=True)
-    assert b"Welcome, Jane Doe" in retry.data
+    retry = test_client.post("/login/password", data={"password": PASSWORD}, follow_redirects=True)
+    assert b"Welcome, Old User" in retry.data
 
 
 def test_claiming_a_taken_username_offers_a_free_alternative(client):
     test_client, _ = client
-    _Register(test_client, "janedoe")
+    Register(test_client, "janedoe")
     test_client.get("/logout")
-
     resp = test_client.post("/login/claim", data={"username": "janedoe"}, follow_redirects=True)
     assert b"&#34;janedoe&#34; is taken" in resp.data or b'"janedoe" is taken' in resp.data
-    assert b"janedoe2" in resp.data  # the first free suffixed alternative
-
-    start_resp = test_client.post("/register/start", data={"username": "janedoe2"}, follow_redirects=True)
-    assert b"janedoe2 is your login. You are a new Participant." in start_resp.data
+    assert b"janedoe2" in resp.data
+    start = test_client.post("/register/start", data={"username": "janedoe2"}, follow_redirects=True)
+    assert b"Join Meetinghouse as janedoe2" in start.data
 
 
 def test_register_start_loops_back_if_the_alternative_is_also_taken(client):
     test_client, _ = client
-    _Register(test_client, "janedoe")
-    _Register(test_client, "janedoe2", name="Jane Two")
+    Register(test_client, "janedoe")
     test_client.get("/logout")
-
+    Register(test_client, "janedoe2", name="Jane Two")
+    test_client.get("/logout")
     resp = test_client.post("/register/start", data={"username": "janedoe2"}, follow_redirects=True)
     assert b"janedoe3" in resp.data
 
 
-def test_admin_can_view_a_participants_self_registration_profile(client):
+def test_admin_registration_and_activation_routes_are_gone(client):
     test_client, app_module = client
-    _Register(test_client, "janedoe")
+    Register(test_client, "janedoe")
+    pid = Pid(app_module)
     test_client.get("/logout")
-    _AdminLogin(test_client)
-
-    (participant_id,) = list(app_module.house.participants.keys())
-    profile_resp = test_client.get(f"/admin/participant/{participant_id}")
-    assert b"123 Main St" in profile_resp.data
-    assert b"maiden" not in profile_resp.data.lower()
-    assert b"thumbprint" not in profile_resp.data.lower()
-
-    photo_resp = test_client.get(f"/admin/participant/{participant_id}/photo")
-    assert photo_resp.status_code == 200
-    assert photo_resp.data == b"not really a jpeg, just test bytes"
-
-
-def test_admin_registration_routes_are_gone(client):
-    test_client, _ = client
-    _AdminLogin(test_client)
-    resp = test_client.post("/admin/register", data={"name": "Someone"})
-    assert resp.status_code == 404
+    test_client.post("/admin/login", data={"password": "test-admin-password"})
+    assert test_client.post("/admin/register", data={"name": "Someone"}).status_code == 404
+    assert test_client.post(f"/admin/participant/{pid}/letter").status_code == 404
+    assert test_client.post(f"/admin/participant/{pid}/activate").status_code == 404
 
 
 def test_front_page_is_a_plain_login_for_a_logged_out_visitor(client):
     test_client, _ = client
     resp = test_client.get("/")
-    assert resp.status_code == 200  # no redirect
+    assert resp.status_code == 200
     assert b'<form method="post" action="/login">' in resp.data
     assert b"Please log in first" not in resp.data
 
 
 def test_front_page_is_the_dashboard_once_logged_in(client):
     test_client, _ = client
-    _Register(test_client, "janedoe")
+    Register(test_client, "janedoe")
     resp = test_client.get("/")
-    assert b"Welcome" not in resp.data  # that flash was from registering, not a fresh "/" hit
-    assert b"Forum" in resp.data  # the logged-in nav, not the login form
-
-
-def test_registration_no_longer_asks_for_thumbprint_or_maiden_name(client):
-    test_client, _ = client
-    test_client.post("/login", data={"username": "janedoe"})
-    form = test_client.get("/register").data.lower()
-    assert b"thumbprint" not in form
-    assert b"maiden" not in form
+    assert b"Forum Committee" in resp.data
+    assert b"haven't finished joining" in resp.data
 
 
 def test_previously_collected_thumbprints_and_maiden_names_are_erased(client):
     """Data collected under the old form is deleted the next time the app starts."""
     test_client, app_module = client
-    _Register(test_client, "janedoe")
-    (participant_id,) = list(app_module.house.participants.keys())
-    old_thumb = app_module.os.path.join(app_module.UPLOAD_DIR, participant_id, "thumbprint.jpg")
+    pid = LegacyMember(app_module)
+    folder = app_module.os.path.join(app_module.UPLOAD_DIR, pid)
+    app_module.os.makedirs(folder, exist_ok=True)
+    old_thumb = app_module.os.path.join(folder, "thumbprint.jpg")
     with open(old_thumb, "wb") as f:
         f.write(b"old thumbprint")
+    app_module.persistence.SaveParticipantProfile(app_module.conn, pid, "123 Main St", 30, "", app_module.Now())
     app_module.conn.execute(
         "UPDATE participant_profiles SET mothers_maiden_name = 'Smith', thumbprint_path = ? WHERE participant_id = ?",
-        (old_thumb, participant_id),
+        (old_thumb, pid),
     )
     app_module.conn.commit()
 
     importlib.reload(app_module)
-    row = app_module.persistence.GetParticipantProfile(app_module.conn, participant_id)
+    row = app_module.persistence.GetParticipantProfile(app_module.conn, pid)
     assert row["mothers_maiden_name"] == "" and row["thumbprint_path"] == ""
     assert not app_module.os.path.exists(old_thumb)
-    assert row["address"] == "123 Main St"  # everything else is kept
-    assert app_module.os.path.isfile(row["photo_path"])
+    assert row["address"] == "123 Main St"

@@ -4,54 +4,8 @@
 <h1>Administrator <a class="button secondary" style="float:right" href="{{ url_for('AdminLogout') }}">Log out</a></h1>
 
 <div class="card">
-  <p class="muted">New Participants register themselves at the <a href="{{ url_for('Login') }}">login page</a>.
-    Each one then needs an activation letter mailed to the address they gave: the one-time code in it
-    is how they prove that address is theirs. Cross-check their printed, mailed-in form against what they
-    submitted using the Profile link below.</p>
-</div>
-
-<div class="card">
-  <h3>Waiting for activation</h3>
-  {% if waiting %}
-    <table>
-      <tr><th>Name</th><th>Address</th><th>Letter</th><th></th></tr>
-      {% for p in waiting %}
-      {% set info = login_info[p.id] %}
-      <tr>
-        <td><a href="{{ url_for('AdminParticipantProfile', participant_id=p.id) }}">{{ p.name }}</a></td>
-        <td>{{ addresses[p.id] }}</td>
-        <td>{% if info.pending_code %}printed {{ info.pending_code.issued_at.strftime('%Y-%m-%d') }}{% else %}<strong>not yet</strong>{% endif %}</td>
-        <td>
-          <form method="post" action="{{ url_for('AdminLetter', participant_id=p.id) }}" class="inline">
-            <input type="hidden" name="purpose" value="activation">
-            <button type="submit">{{ "Print new letter" if info.pending_code else "Print activation letter" }}</button>
-          </form>
-          <form method="post" action="{{ url_for('AdminActivate', participant_id=p.id) }}" class="inline"
-                onsubmit="return confirm('Activate without a letter? Only do this if you have verified this person yourself.');">
-            <button type="submit" class="secondary">Activate in person</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </table>
-  {% else %}
-    <p class="muted">Nobody is waiting.</p>
-  {% endif %}
-</div>
-
-<div class="card">
-  <h3>Record a fresh signed form</h3>
-  <form method="post" action="{{ url_for('AdminSignForm') }}">
-    <label>Participant</label>
-    <select name="participant_id" required>
-      {% for p in participants %}
-        <option value="{{ p.id }}">{{ p.name }}</option>
-      {% endfor %}
-    </select>
-    <label>Scan reference (optional)</label>
-    <input type="text" name="scan_ref">
-    <p><input type="submit" value="Record today's date as signed"></p>
-  </form>
+  <p class="muted">People join on their own: details, a passkey, and an ID check. Recovery and the yearly
+    check are automatic too, so there's nothing here to approve.</p>
 </div>
 
 <div class="card">
@@ -62,17 +16,15 @@
 </div>
 
 <div class="card">
-  <h3>Participants</h3>
+  <h3>Members</h3>
   <table>
-    <tr><th>Name</th><th>Activated?</th><th>Passkeys</th><th>Form current?</th><th>Dismissed?</th><th></th></tr>
+    <tr><th>Name</th><th>Status</th><th>Passkeys</th><th>Dismissed?</th></tr>
     {% for p in participants %}
     <tr>
       <td>{{ p.name }}</td>
-      <td>{{ "yes" if login_info[p.id].activated else "waiting" }}</td>
-      <td>{{ login_info[p.id].passkeys }}</td>
-      <td>{{ "yes" if p.IsParticipant(now) else ("—" if not login_info[p.id].activated else "EXPIRED") }}</td>
+      <td>{{ status[p.id] }}</td>
+      <td>{{ passkeys[p.id] }}</td>
       <td>{{ "until " + p.CurrentDismissal(now).end|fmt if p.IsDismissed(now) else "no" }}</td>
-      <td><a href="{{ url_for('AdminParticipantProfile', participant_id=p.id) }}">Profile</a></td>
     </tr>
     {% endfor %}
   </table>
@@ -81,7 +33,7 @@
 <div class="card">
   <h3>Current Rules</h3>
   <table>
-    <tr><th>Subsection</th><th>Quiet time</th><th>Min life</th><th>Voter fraction</th><th>Approval fraction</th></tr>
+    <tr><th>Committee</th><th>Seasoning Time</th><th>Minimum Life</th><th>Threshold</th><th>Approval</th></tr>
     {% for s, r in rules.items() %}
     <tr>
       <td>{{ s.value }}</td>

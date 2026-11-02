@@ -5,9 +5,12 @@ directly and it will execute every test itself, with no dependency on
 pytest being installed.
 """
 
+import dataclasses
 import datetime as dt
 
 from meetinghouse import (
+    AllowedRange,
+    NoPollOnTopic,
     Dismissal,
     DuplicateTopic,
     InvalidRuleChange,
@@ -164,7 +167,7 @@ def test_passed_rule_change_only_affects_future_topics():
         author.id, Subsection.RULES, None, START,
         proposed_change=RuleChange(Subsection.FORUM, "approval_fraction", 0.70),
     )
-    assert rules_topic.title == "Change Forum approval from 66.7% to 70%"
+    assert rules_topic.title == "Change Forum Approval from 66.7% to 70%"
     old_forum_topic = house.CreateTopic(
         author.id, Subsection.FORUM, "Old regime topic", START, poll_question="Approve?"
     )
@@ -309,7 +312,7 @@ def test_abstain_only_in_forum():
     house, people = CreateHouseWithParticipants(4)
     rules_topic = house.CreateTopic(
         people[0].id, Subsection.RULES, None, START,
-        proposed_change=RuleChange(Subsection.FORUM, "voter_fraction", 0.30),
+        proposed_change=RuleChange(Subsection.FORUM, "voter_fraction", 0.26),
     )
     jury_topic = house.CreateTopic(
         people[0].id, Subsection.JURY, "", START, target_participant_id=people[3].id
@@ -332,7 +335,7 @@ def test_only_one_open_jury_topic_per_person():
         assert False, "should have raised"
     except DuplicateTopic as exc:
         assert exc.existing_topic_id == first.id
-        assert "already an open Jury Topic about Participant 3" in str(exc)
+        assert "already an open Jury Conversation about Participant 3" in str(exc)
     house.CreateTopic(people[1].id, Subsection.JURY, "", START, target_participant_id=people[2].id)
 
 
@@ -343,10 +346,13 @@ def test_rule_changes_are_one_small_step_within_limits():
     def Propose(subsection, setting, value):
         return house.CreateTopic(pid, Subsection.RULES, None, START, proposed_change=RuleChange(subsection, setting, value))
 
+    house.current_rules[Subsection.RULES] = dataclasses.replace(house.current_rules[Subsection.RULES], voter_fraction=0.09)
     for subsection, setting, value, words in [
-        (Subsection.FORUM, "approval_fraction", 0.60, "at most 5 points"),  # 66.7% -> 60% is 6.7 points
-        (Subsection.JURY, "approval_fraction", 0.50, "between 10% and 49%"),
-        (Subsection.FORUM, "voter_fraction", 0.20, "between 25% and 100%"),
+        (Subsection.FORUM, "approval_fraction", 0.62, "can propose 63% to 70%"),  # 66.7%: 5% of it is 3.3 points
+        (Subsection.FORUM, "approval_fraction", 0.71, "can propose 63% to 70%"),
+        (Subsection.FORUM, "voter_fraction", 0.23, "can propose 24% to 26%"),
+        (Subsection.FORUM, "approval_fraction", 0.655, "whole percentages"),
+        (Subsection.RULES, "voter_fraction", 0.08, "between 9% and 100%"),
         (Subsection.RULES, "approval_fraction", 0.51, "already 51%"),
         (Subsection.FORUM, "quiet_time", 0.5, "fixed"),
     ]:
@@ -356,14 +362,16 @@ def test_rule_changes_are_one_small_step_within_limits():
         except InvalidRuleChange as exc:
             assert words in str(exc), str(exc)
 
-    first = Propose(Subsection.JURY, "approval_fraction", 0.15)
+    Propose(Subsection.FORUM, "approval_fraction", 0.63)
+    Propose(Subsection.RULES, "voter_fraction", 0.10)  # at 9%, a whole point is allowed even though 5% is less
+    first = Propose(Subsection.JURY, "approval_fraction", 0.21)
     try:
-        Propose(Subsection.JURY, "approval_fraction", 0.25)
+        Propose(Subsection.JURY, "approval_fraction", 0.19)
         assert False, "should have raised"
     except DuplicateTopic as exc:
         assert exc.existing_topic_id == first.id
-        assert "already an open Topic about Jury approval" in str(exc)
-    Propose(Subsection.JURY, "voter_fraction", 0.45)  # a different setting is fine
+        assert "already an open Conversation about Jury Approval" in str(exc)
+    Propose(Subsection.JURY, "voter_fraction", 0.52)  # a different setting is fine
 
 
 def test_software_change_topic():
@@ -495,3 +503,47 @@ def RunAllTests():
 
 if __name__ == "__main__":
     RunAllTests()
+
+
+def test_allowed_range_matches_the_design_examples():
+    assert AllowedRange(0.667) == (63, 70)
+    assert AllowedRange(0.25) == (24, 26)
+    assert AllowedRange(0.09) == (9, 10)  # never below 9%, but can still move up a point
+    assert AllowedRange(1.0) == (95, 100)  # never above 100%
+
+
+def test_question_attached_later_starts_minimum_life_then():
+    house, people = CreateHouseWithParticipants(4)
+    topic = house.CreateTopic(people[0].id, Subsection.FORUM, "Chairs for the hall", START)
+    assert not topic.HasPoll() and topic.pollster_id is None
+    try:
+        house.CastVote(topic.id, people[1].id, VoteChoice.YES, "Yes.", START)
+        assert False, "should have raised"
+    except NoPollOnTopic:
+        pass
+    house.Tick(START + Days(60))
+    assert not topic.closed  # without a Question it never closes
+
+    attached = START + Days(10)
+    house.AttachQuestion(topic.id, people[2].id, "Shall we buy 40 chairs?", attached)
+    assert topic.pollster_id == people[2].id and topic.question_attached_at == attached
+    assert people[2].id in topic.readers
+    try:
+        house.AttachQuestion(topic.id, people[3].id, "Another question?", attached)
+        assert False, "only one Question per Conversation"
+    except InvalidTopic:
+        pass
+    for person in people:
+        house.CastVote(topic.id, person.id, VoteChoice.YES, "Good idea.", attached)
+    house.Tick(attached + Days(20))  # Seasoning Time is over, but not 3 weeks since the Question
+    assert not topic.closed
+    house.Tick(attached + Days(21) + dt.timedelta(hours=1))
+    assert topic.closed and topic.result is PollResult.PASSED
+
+
+def test_initiator_is_pollster_when_starting_with_a_question():
+    house, people = CreateHouseWithParticipants(4)
+    forum = house.CreateTopic(people[0].id, Subsection.FORUM, "Chairs", START, poll_question="Buy?")
+    jury = house.CreateTopic(people[1].id, Subsection.JURY, "", START, target_participant_id=people[3].id)
+    assert forum.pollster_id == people[0].id and forum.question_attached_at == START
+    assert jury.pollster_id == people[1].id

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Finish joining — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Finish joining</h1>
+
+<div class="card">
+  <h3>{% if has_passkey %}✓ {% endif %}Step 2: add a passkey</h3>
+  {% if has_passkey %}
+    <p class="muted">Done. You'll log in with your device's face, fingerprint or PIN unlock.</p>
+  {% else %}
+    <p>A passkey lets you log in with your phone or computer's face, fingerprint or PIN unlock.
+      There's no password to steal or forget.</p>
+    <label for="passkey-label">Name for this passkey (optional)</label>
+    <input type="text" id="passkey-label" placeholder="e.g. My iPhone" maxlength="60">
+    <p><button type="button" data-passkey="add"
+               data-options="{{ url_for('PasskeyRegisterOptions') }}"
+               data-verify="{{ url_for('PasskeyRegisterVerify') }}"
+               data-label="passkey-label"
+               data-status="passkey-status">Add a passkey on this device</button></p>
+    <p id="passkey-status" class="muted" role="status"></p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>Step 3: ID check</h3>
+  {% if latest and latest['status'] == 'declined' %}
+    <p class="notice">Your last ID check didn't pass. You can try again.</p>
+  {% elif latest and latest['status'] == 'duplicate' %}
+    <p class="notice">That face already belongs to a Meetinghouse member. Each person can be a member only once.</p>
+  {% elif latest and latest['status'] == 'pending' %}
+    <p class="muted">An ID check was started. If you didn't finish it, start again below.</p>
+  {% endif %}
+  {% if not providers %}
+    <p>ID checks aren't available yet, so joining is paused for now. Your account is saved: come back later.</p>
+  {% elif not has_passkey %}
+    <p class="muted">Add your passkey first.</p>
+  {% else %}
+    <p>You'll photograph your ID, take a short live selfie, and show proof of your address. It takes a few minutes.
+      When it passes, your membership starts straight away.</p>
+    <form method="post" action="{{ url_for('JoinIdCheck') }}">
+      {% include "_choose_provider.html" %}
+      <p><input type="submit" value="Start the ID check"></p>
+    </form>
+  {% endif %}
+</div>
+<script src="{{ url_for('static', filename='passkeys.js') }}"></script>
+{% endblock %}

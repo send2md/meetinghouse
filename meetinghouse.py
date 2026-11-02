@@ -15,21 +15,35 @@ the Daily Summary as someone else's job.
 The design these rules implement is recorded in the "Meetinghouse
 Design" document (October 2026). In brief:
 
+Words. The design document's words differ from some names in this
+code, which predate them. In code a `Topic` is a Conversation, a
+`subsection` is a Committee, a `DiscussionPost` is a Comment, the
+`poll_question` is the Question, `quiet_time` is the Seasoning Time,
+`topic.readers` are the Contactors, `voter_fraction` is the Threshold
+and `approval_fraction` the Approval.
+
 * Forum votes are Yes / Abstain / No, and Abstain ("standing aside")
   counts with Yes. Rules and Jury votes are Yes / No only.
-* A Topic closes once it is at least its minimum life old and has
-  then been quiet for its quiet time. Each person's first 5 votes and
-  first 5 discussion posts on a Topic restart that quiet clock; after
-  that they still count but no longer keep the Topic open. A
-  discussion post nearly identical to one the same person already
-  made on that Topic uses up one of their 5 but never restarts it.
-* Turnout is voters / Readers. A Reader is a current Participant who
-  opened, wrote, or voted on the Topic. A paused Participant (form
-  lapsed) stays a Reader only where they voted, and those votes count.
-* A Rules Topic changes ONE setting (turnout or approval) of one
-  subsection, by at most 5 points, within fixed limits; only one open
-  Topic per setting at a time. Quiet time and minimum life are fixed.
-  A Rules Topic may instead approve a software change.
+* A Forum Conversation may start without a Question; any Contactor
+  may attach one later and becomes its Pollster. Rules and Jury
+  Conversations always start with one, asked by their Initiator.
+* A Conversation closes once its Question has been attached for its
+  Minimum Life and it has then gone without new activity for its
+  Seasoning Time. Each person's first 5 votes and first 5 Comments
+  restart that clock; after that they still count but no longer keep
+  the Conversation open. A Comment nearly identical to one the same
+  person already made there uses up one of their 5 but never restarts
+  it. A Conversation without a Question never closes.
+* The Threshold is Voters / Contactors. A Contactor is a current
+  Member who has touched the Conversation (opened it, commented or
+  voted). A paused Member (yearly check lapsed) stays a Contactor
+  only where they voted, and those votes count.
+* A Rules Conversation changes ONE setting (Threshold or Approval) of
+  one Committee, by at most 5% of its current value (always at least
+  1 point), in whole percentages, never below 9% or above 100%; only
+  one open Conversation per setting at a time. Seasoning Time and
+  Minimum Life are fixed. A Rules Conversation may instead approve a
+  software change.
 * Only one Jury Topic per person may be open. A passed one dismisses
   the person (2 weeks, doubling each time, never permanently); their
   votes and Reader status come off every open Topic, whose quiet clock
@@ -44,6 +58,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import difflib
+import math
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -82,21 +97,44 @@ RESTART_LIMIT = 5
 # (after ignoring case, punctuation and spacing) count as near-identical.
 NEAR_IDENTICAL_RATIO = 0.9
 
-# A Rules Topic may move a setting by at most this much (5 points).
+# A Rules Conversation may move a setting by at most this share of its
+# current value (5%), and always by at least one whole point.
 RULE_STEP = 0.05
 
-# The settings a Rules Topic may change, and their plain-English names.
-SETTING_NAMES = {"voter_fraction": "turnout", "approval_fraction": "approval"}
+# The settings a Rules Conversation may change, and their names.
+SETTING_NAMES = {"voter_fraction": "Threshold", "approval_fraction": "Approval"}
 
-# Fixed limits no Rules change may cross: (lowest, highest).
+# Every setting, in every Committee, stays within these limits.
+SETTING_MIN = 0.09
+SETTING_MAX = 1.0
 SETTING_LIMITS = {
-    (Subsection.FORUM, "voter_fraction"): (0.25, 1.0),
-    (Subsection.RULES, "voter_fraction"): (0.25, 1.0),
-    (Subsection.JURY, "voter_fraction"): (0.25, 1.0),
-    (Subsection.FORUM, "approval_fraction"): (0.51, 1.0),
-    (Subsection.RULES, "approval_fraction"): (0.51, 1.0),
-    (Subsection.JURY, "approval_fraction"): (0.10, 0.49),
+    (subsection, setting): (SETTING_MIN, SETTING_MAX)
+    for subsection in Subsection
+    for setting in SETTING_NAMES
 }
+
+
+def _RoundHalfUp(x):
+    return int(math.floor(x + 0.5))
+
+
+def AllowedRange(current, low=SETTING_MIN, high=SETTING_MAX):
+    """The whole percentages a setting at `current` may move to, as (lowest, highest).
+
+    At most 5% of the current value either way, rounded to whole
+    percentages, but always at least 1 point, and never past the limits.
+    66.7% gives (63, 70); 25% gives (24, 26); 9% gives (9, 10).
+    """
+    now = current * 100
+    down = min(_RoundHalfUp(now * (1 - RULE_STEP)), math.floor(now - 1 + _EPSILON))
+    up = max(_RoundHalfUp(now * (1 + RULE_STEP)), math.ceil(now + 1 - _EPSILON))
+    return max(down, _RoundHalfUp(low * 100)), min(up, _RoundHalfUp(high * 100))
+
+
+def AllowedValues(current, low=SETTING_MIN, high=SETTING_MAX):
+    """Every whole percentage a setting at `current` may change to, as fractions."""
+    lo, hi = AllowedRange(current, low, high)
+    return [p / 100 for p in range(lo, hi + 1) if abs(p / 100 - current) > _EPSILON]
 
 _EPSILON = 1e-9
 
@@ -348,10 +386,16 @@ class Topic:
     closed_at: Optional[dt.datetime] = None
     result: Optional[PollResult] = None
     last_activity_at: dt.datetime = field(default=None)
+    pollster_id: Optional[str] = None
+    question_attached_at: Optional[dt.datetime] = None
 
     def __post_init__(self):
         if self.last_activity_at is None:
             self.last_activity_at = self.created_at
+        if self.poll_question is not None and self.question_attached_at is None:
+            self.question_attached_at = self.created_at
+        if self.poll_question is not None and self.pollster_id is None:
+            self.pollster_id = self.author_id
 
     def HasPoll(self):
         """Return whether this Topic carries a Poll question."""
@@ -436,21 +480,22 @@ class Meetinghouse:
         """Raise InvalidRuleChange unless `change` may be proposed right now."""
         if change.setting not in SETTING_NAMES:
             raise InvalidRuleChange(
-                "Only turnout and approval can be changed; quiet time and minimum life are fixed."
+                "Only the Threshold and the Approval can be changed; Seasoning Time and Minimum Life are fixed."
             )
         low, high = SETTING_LIMITS[(change.subsection, change.setting)]
         current = getattr(self.current_rules[change.subsection], change.setting)
         name = change.Describe()
         if not low - _EPSILON <= change.value <= high + _EPSILON:
             raise InvalidRuleChange(f"{name} must stay between {Percent(low)} and {Percent(high)}.")
+        if abs(change.value * 100 - round(change.value * 100)) > 1e-6:
+            raise InvalidRuleChange(f"{name} is changed in whole percentages, such as 63% or 64%.")
         if abs(change.value - current) < _EPSILON:
             raise InvalidRuleChange(f"{name} is already {Percent(current)}.")
-        if abs(change.value - current) > RULE_STEP + _EPSILON:
-            lo = max(low, current - RULE_STEP)
-            hi = min(high, current + RULE_STEP)
+        lo, hi = AllowedRange(current, low, high)
+        if not lo - 1e-6 <= change.value * 100 <= hi + 1e-6:
             raise InvalidRuleChange(
-                f"{name} can change by at most 5 points at a time: it is {Percent(current)} now, "
-                f"so this Topic can propose {Percent(lo)} to {Percent(hi)}."
+                f"{name} can change by at most 5% of its value at a time: it is {Percent(current)} now, "
+                f"so this Conversation can propose {lo}% to {hi}%."
             )
 
     def OpenRulesTopicFor(self, subsection, setting):
@@ -493,14 +538,14 @@ class Meetinghouse:
         if subsection is Subsection.RULES:
             if (proposed_change is None) == (not software_ref):
                 raise InvalidTopic(
-                    "A Rules Topic either changes one setting or approves a software change."
+                    "A Rules Conversation either changes one setting or approves a software change."
                 )
             if proposed_change is not None:
                 existing = self.OpenRulesTopicFor(proposed_change.subsection, proposed_change.setting)
                 if existing is not None:
                     raise DuplicateTopic(
-                        f"There's already an open Topic about {proposed_change.Describe()} "
-                        "— join that discussion instead.",
+                        f"There's already an open Conversation about {proposed_change.Describe()} "
+                        "— join that one instead.",
                         existing.id,
                     )
                 self.CheckRuleChange(proposed_change)
@@ -514,18 +559,20 @@ class Meetinghouse:
             poll_question = poll_question or "Adopt this change?"
         if subsection is Subsection.JURY:
             if target_participant_id is None or target_participant_id not in self.participants:
-                raise InvalidTopic("A Jury Topic must name an existing Participant.")
+                raise InvalidTopic("A Jury Conversation must name an existing Member.")
             existing = self.OpenJuryTopicFor(target_participant_id)
             if existing is not None:
                 raise DuplicateTopic(
-                    f"There's already an open Jury Topic about {self.participants[target_participant_id].name} "
-                    "— join that discussion instead.",
+                    f"There's already an open Jury Conversation about {self.participants[target_participant_id].name} "
+                    "— join that one instead.",
                     existing.id,
                 )
             poll_question = "Do we dismiss them?"
             title = self.participants[target_participant_id].name
+        if poll_question is not None and not poll_question.strip():
+            poll_question = None
         if not title or not title.strip():
-            raise InvalidTopic("Every Topic needs a title.")
+            raise InvalidTopic("Every Conversation needs a Title.")
 
         topic = Topic(
             id=str(uuid.uuid4()),
@@ -540,6 +587,8 @@ class Meetinghouse:
             target_participant_id=target_participant_id,
             proposed_change=proposed_change,
             software_ref=software_ref or None,
+            pollster_id=author.id if poll_question else None,
+            question_attached_at=now if poll_question else None,
         )
         self.topics[topic.id] = topic
         self._Log("topic_created", now, topic_id=topic.id, author_id=author.id)
@@ -549,8 +598,7 @@ class Meetinghouse:
     def MarkRead(self, topic_id, participant_id, now):
         """Record that the given Participant has read this Topic.
 
-        Returns True the first time, so the caller can ask once:
-        "Would you like to vote?"
+        Returns True the first time they touch it.
         """
         topic = self._GetOpenTopic(topic_id)
         self._RequireActive(participant_id, now)
@@ -558,6 +606,27 @@ class Meetinghouse:
             return False
         topic.readers[participant_id] = now
         return True
+
+    def AttachQuestion(self, topic_id, participant_id, question, now):
+        """Attach the Question to a Conversation that has none; the asker becomes its Pollster.
+
+        Only Forum Conversations start without a Question. Attaching one
+        starts its Minimum Life, so it is shown to everyone for at least
+        that long before it can close.
+        """
+        if not question or not question.strip():
+            raise InvalidTopic("Write the Question you'd like the Meeting to decide.")
+        topic = self._GetOpenTopic(topic_id)
+        if topic.HasPoll():
+            raise InvalidTopic("This Conversation already has its Question. There can be only one.")
+        self._RequireActive(participant_id, now)
+        topic.readers.setdefault(participant_id, now)
+        topic.poll_question = question.strip()
+        topic.pollster_id = participant_id
+        topic.question_attached_at = now
+        topic.last_activity_at = now
+        self._Log("question_attached", now, topic_id=topic_id, participant_id=participant_id)
+        return topic
 
     def _UseRestart(self, topic, participant_id, kind):
         """Use one of this person's restarts of `kind` if any are left; say whether it was."""
@@ -574,10 +643,10 @@ class Meetinghouse:
         first RESTART_LIMIT votes on this Topic restart its quiet clock.
         """
         if not comment or not comment.strip():
-            raise InvalidTopic("Each Vote/ReVote must be accompanied by a comment.")
+            raise InvalidTopic("Every vote needs its reason. Please write why you're voting this way.")
         topic = self._GetOpenTopic(topic_id)
         if not topic.HasPoll():
-            raise NoPollOnTopic("This Topic has no Poll to vote on.")
+            raise NoPollOnTopic("This Conversation has no Question to vote on yet.")
         if choice not in topic.AllowedChoices():
             raise InvalidTopic(f"Abstain isn't an option in {topic.subsection.value}: vote Yes or No.")
         self._RequireActive(participant_id, now)
@@ -617,7 +686,7 @@ class Meetinghouse:
         restarts the quiet clock.
         """
         if not text or not text.strip():
-            raise InvalidTopic("A discussion post can't be empty.")
+            raise InvalidTopic("A Comment can't be empty.")
         topic = self._GetOpenTopic(topic_id)
         self._RequireActive(participant_id, now)
         topic.readers.setdefault(participant_id, now)
@@ -648,9 +717,9 @@ class Meetinghouse:
         """Return the named Topic, raising if it does not exist or has closed."""
         topic = self.topics.get(topic_id)
         if topic is None:
-            raise InvalidTopic(f"No such Topic: {topic_id}")
+            raise InvalidTopic(f"No such Conversation: {topic_id}")
         if topic.closed:
-            raise TopicClosed(f"Topic {topic_id} is already closed.")
+            raise TopicClosed("This Conversation has already closed.")
         return topic
 
     # --- Counting -----------------------------------------------------------------
@@ -696,7 +765,7 @@ class Meetinghouse:
         """Return whether this Topic has satisfied its minimum life and Quiet time."""
         if topic.closed or not topic.HasPoll():
             return False
-        if now - topic.created_at < topic.rules.min_life:
+        if now - (topic.question_attached_at or topic.created_at) < topic.rules.min_life:
             return False
         return now - topic.last_activity_at >= topic.rules.quiet_time
 

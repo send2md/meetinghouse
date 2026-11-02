@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Practice ID check — Meetinghouse{% endblock %}
+{% block content %}
+<div class="card notice" style="max-width:520px;margin:2rem auto;">
+  <h1>Practice ID check</h1>
+  <p><strong>This is not a real ID check.</strong> It stands in for the real service while Meetinghouse is
+    being tested, and lets you choose the outcome. It can't be turned on by accident: config.py has to ask for it.</p>
+  <p class="muted">{{ "Joining" if row['purpose'] == 'join' else "Yearly check" }}</p>
+  <form method="post">
+    <button type="submit" name="outcome" value="approved">Pass</button>
+    <button type="submit" name="outcome" value="declined" class="secondary">Fail</button>
+    <button type="submit" name="outcome" value="duplicate" class="secondary">Already a member</button>
+  </form>
+</div>
+{% endblock %}

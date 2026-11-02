@@ -11,12 +11,12 @@
     {% if current_participant %}
     <nav>
       <a href="{{ url_for('Dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('SubsectionView', name='forum') }}">Forum</a>
-      <a href="{{ url_for('SubsectionView', name='rules') }}">Rules</a>
-      <a href="{{ url_for('SubsectionView', name='jury') }}">Jury</a>
+      <a href="{{ url_for('SubsectionView', name='forum') }}">Forum Committee</a>
+      <a href="{{ url_for('SubsectionView', name='rules') }}">Rules Committee</a>
+      <a href="{{ url_for('SubsectionView', name='jury') }}">Jury Committee</a>
       <a href="{{ url_for('Archive') }}">Archive</a>
       <a href="{{ url_for('Summary') }}">Daily Summary</a>
-      <a href="{{ url_for('CurrentRules') }}">Current rules</a>
+      <a href="{{ url_for('CurrentRules') }}">Current Rules</a>
       <a href="{{ url_for('Account') }}">Account</a>
     </nav>
     {% endif %}

@@ -1,0 +1,10 @@
+{% if providers|length > 1 %}
+  <label>Which ID-check company would you like to use?</label>
+  {% for p in providers %}
+    <label><input type="radio" name="provider" value="{{ p.name }}" {{ "checked" if loop.first }}> {{ p.label }}</label>
+  {% endfor %}
+  <p class="muted">The Rules Committee approves this list. Each company sees your ID and face; Meetinghouse keeps only the result.</p>
+{% else %}
+  <input type="hidden" name="provider" value="{{ providers[0].name }}">
+  <p class="muted">The ID check is done by {{ providers[0].label }}.</p>
+{% endif %}

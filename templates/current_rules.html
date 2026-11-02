@@ -1,18 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Current rules — Meetinghouse{% endblock %}
+{% block title %}Current Rules — Meetinghouse{% endblock %}
 {% block content %}
-<h1>Current rules</h1>
-<p>Every Topic stays open at least its minimum life, then closes once it has been quiet for its quiet time.
-  It passes if enough Readers voted (turnout) and enough votes were in favour (approval).
-  Only turnout and approval can change, by a Rules vote, 5 points at a time and never past the limits below.</p>
+<h1>Current Rules</h1>
+<p>A Conversation closes once its Question has been attached for its Minimum Life and it has then gone without new
+  activity for its Seasoning Time. The Question passes if enough Contactors voted (the Threshold) and enough of the
+  votes were in favor (the Approval). A Conversation without a Question stays open for Discussion.</p>
 
 <div class="card">
-  <h3>Fixed for every Topic</h3>
+  <h3>Fixed for every Conversation</h3>
   <table>
-    <tr><th>Section</th><th>Minimum life</th><th>Quiet time</th><th>Votes</th></tr>
+    <tr><th>Committee</th><th>Minimum Life</th><th>Seasoning Time</th><th>Votes</th></tr>
     {% for s, r in rules.items() %}
     <tr>
-      <td>{{ s.value }}</td>
+      <td>{{ s.value }} Committee</td>
       <td>{{ r.min_life|humanage }}</td>
       <td>{{ r.quiet_time|humanage }}</td>
       <td>{{ "Yes · Abstain · No" if s.value == "Forum" else "Yes · No" }}</td>
@@ -22,19 +22,22 @@
 </div>
 
 <div class="card">
-  <h3>Changeable by a Rules vote</h3>
+  <h3>Changeable by a vote in the Rules Committee</h3>
   <table>
-    <tr><th>Setting</th><th>Now</th><th>Limits</th><th>Last changed</th><th>Open Topic</th></tr>
+    <tr><th>Setting</th><th>Now</th><th>One vote can change it to</th><th>Last changed</th><th>Open Conversation</th></tr>
     {% for row in rows %}
     <tr>
       <td>{{ row.subsection.value }} {{ row.label }}</td>
       <td><strong>{{ row.current|pct }}</strong></td>
-      <td>{{ row.low|pct }} to {{ row.high|pct }}</td>
+      <td>{{ row.step_low }}% to {{ row.step_high }}%</td>
       <td>{{ row.last_changed|day if row.last_changed else "never" }}</td>
       <td>{% if row.open_topic %}<a href="{{ url_for('TopicDetail', topic_id=row.open_topic.id) }}">{{ row.open_topic.title }}</a>{% else %}<span class="muted">none</span>{% endif %}</td>
     </tr>
     {% endfor %}
   </table>
-  <p class="muted">Turnout = voters ÷ Readers. Approval = votes in favour ÷ all votes; in the Forum, Abstain counts in favour.</p>
+  <p class="muted">Each vote can move a number by at most 5% of its current value, and always by at least 1 point, in whole
+    percentages. Every Threshold and Approval always stays between 9% and 100%.</p>
+  <p class="muted">Contactors are the Members who have touched a Conversation: opened it, posted a Comment or voted.
+    Threshold = Voters ÷ Contactors. Approval = votes in favor ÷ all votes; in the Forum Committee, Abstain counts in favor.</p>
 </div>
 {% endblock %}

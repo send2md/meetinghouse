@@ -1,27 +1,25 @@
-"""Login security: mailed one-time codes, passkeys, and limits on guessing.
+"""Login security: passkeys, joining, email recovery, and limits on guessing.
 
 Like credentials (see persistence.py), none of this is a Meetinghouse
 domain concept, so it lives in its own tables beside the engine's.
 
-Three ideas, each answering "is this really the right person?":
+* Joining. A new account can log in but can't take part until it has
+  added a passkey and passed the ID check (see idcheck.py); then it is
+  activated. Accounts from before this existed count as activated.
 
-* Activation by mail. A new registration can log in but cannot take
-  part until it enters a one-time code that the administrator mailed to
-  the postal address it gave. That ties each account to a real address,
-  which makes fake or duplicate accounts much harder to create.
+* Passkeys (WebAuthn). Logging in needs the member's own phone or
+  computer plus its face/fingerprint/PIN unlock. Nothing secret is
+  stored here: only each passkey's public key. There are no passwords;
+  accounts made before passkeys keep theirs only until they add one.
 
-* Passkeys (WebAuthn). Once a Participant adds a passkey, logging in
-  needs their own phone or computer plus its face/fingerprint/PIN
-  unlock; their password stops working for that account. Nothing
-  secret is stored here: only each passkey's public key.
+* Recovery by email. A lost device is handled by an emailed one-time
+  code that works only 48 hours after it was requested, while the same
+  email offers a link to cancel it: a stranger in someone's mailbox
+  can't take over their account before they notice.
 
-* Recovery by mail. Losing a device (or a password) is handled by the
-  administrator resetting the login and mailing a fresh one-time code,
-  never by email or security questions an impostor could answer.
-
-Mailed codes and passwords are stored only as salted hashes, and every
-guessable secret (passwords, mailed codes, the admin password) is
-behind a lockout after repeated wrong tries.
+Codes are stored only as salted hashes, and every guessable secret
+(passwords, codes, the admin password) is behind a lockout after
+repeated wrong tries.
 """
 
 from __future__ import annotations
@@ -36,14 +34,6 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS account_status (
     participant_id TEXT PRIMARY KEY REFERENCES participants(id),
     activated_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS mailed_codes (
-    participant_id TEXT PRIMARY KEY REFERENCES participants(id),
-    purpose TEXT NOT NULL,
-    code_hash TEXT NOT NULL,
-    issued_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS passkeys (
@@ -61,16 +51,49 @@ CREATE TABLE IF NOT EXISTS login_throttle (
     failures INTEGER NOT NULL,
     locked_until TEXT
 );
+
+CREATE TABLE IF NOT EXISTS member_info (
+    participant_id TEXT PRIMARY KEY REFERENCES participants(id),
+    email TEXT NOT NULL DEFAULT '',
+    town TEXT NOT NULL DEFAULT '',
+    zip TEXT NOT NULL DEFAULT '',
+    photo_path TEXT NOT NULL DEFAULT '',
+    verified_at TEXT,
+    verified_country TEXT NOT NULL DEFAULT '',
+    verified_ref TEXT NOT NULL DEFAULT '',
+    last_login_at TEXT,
+    reminders_sent TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS id_sessions (
+    id TEXT PRIMARY KEY,
+    participant_id TEXT NOT NULL REFERENCES participants(id),
+    purpose TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    reference TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS recovery_requests (
+    id TEXT PRIMARY KEY,
+    participant_id TEXT NOT NULL REFERENCES participants(id),
+    code_hash TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    usable_from TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'waiting'
+);
 """
 
-ACTIVATION = "activation"
-RECOVERY = "recovery"
+RECOVERY_WAIT = dt.timedelta(hours=48)
+RECOVERY_VALID = dt.timedelta(days=7)
 
-# Codes avoid look-alike characters (no I, O, 0 or 1) since people type
-# them in from a paper letter.
+# Codes avoid look-alike characters (no I, O, 0 or 1) since people
+# copy them by hand from an email.
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 8
-CODE_VALID_DAYS = 90
 
 MAX_FAILURES = 5
 LOCKOUT = dt.timedelta(minutes=15)
@@ -82,6 +105,9 @@ NO_PASSWORD = "!disabled"
 
 def InitSchema(conn):
     conn.executescript(SCHEMA)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(member_info)")}
+    if "zip" not in columns:
+        conn.execute("ALTER TABLE member_info ADD COLUMN zip TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 
@@ -99,7 +125,7 @@ def _Parse(value):
 def EnsureStatusRows(conn, house, now):
     """Give every Participant an account_status row, grandfathering old ones.
 
-    Participants who registered before activation-by-mail existed already
+    Members who registered before activation-by-mail existed already
     have a signed form; they count as activated. Anyone without a form
     (which can only happen for registrations made after this change)
     stays waiting for their letter.
@@ -142,7 +168,7 @@ def MarkActivated(conn, participant_id, now):
     conn.commit()
 
 
-# --- Mailed one-time codes -------------------------------------------------
+# --- One-time codes (emailed for recovery) ----------------------------------------
 
 
 def NormalizeCode(raw: str) -> str:
@@ -151,54 +177,6 @@ def NormalizeCode(raw: str) -> str:
 
 def FormatCode(code: str) -> str:
     return f"{code[:4]}-{code[4:]}"
-
-
-def IssueCode(conn, participant_id, purpose, now) -> str:
-    """Create a fresh code to mail, replacing any earlier one. Returns it once."""
-    code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
-    conn.execute(
-        """
-        INSERT INTO mailed_codes (participant_id, purpose, code_hash, issued_at, expires_at)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(participant_id) DO UPDATE SET
-            purpose = excluded.purpose,
-            code_hash = excluded.code_hash,
-            issued_at = excluded.issued_at,
-            expires_at = excluded.expires_at
-        """,
-        (
-            participant_id,
-            purpose,
-            generate_password_hash(code, method="pbkdf2:sha256"),
-            _Iso(now),
-            _Iso(now + dt.timedelta(days=CODE_VALID_DAYS)),
-        ),
-    )
-    conn.commit()
-    return code
-
-
-def PendingCode(conn, participant_id):
-    """The outstanding code's purpose and dates (never the code), or None."""
-    row = conn.execute(
-        "SELECT purpose, issued_at, expires_at FROM mailed_codes WHERE participant_id = ?", (participant_id,)
-    ).fetchone()
-    if row is None:
-        return None
-    return {"purpose": row["purpose"], "issued_at": _Parse(row["issued_at"]), "expires_at": _Parse(row["expires_at"])}
-
-
-def RedeemCode(conn, participant_id, raw_code, now) -> Optional[str]:
-    """If `raw_code` is this Participant's live code, use it up and return its purpose."""
-    row = conn.execute("SELECT * FROM mailed_codes WHERE participant_id = ?", (participant_id,)).fetchone()
-    if row is None or _Parse(row["expires_at"]) < now:
-        return None
-    code = NormalizeCode(raw_code)
-    if len(code) != CODE_LENGTH or not check_password_hash(row["code_hash"], code):
-        return None
-    conn.execute("DELETE FROM mailed_codes WHERE participant_id = ?", (participant_id,))
-    conn.commit()
-    return row["purpose"]
 
 
 # --- Passkeys ----------------------------------------------------------------
@@ -284,3 +262,138 @@ def RecordFailure(conn, key, now) -> Optional[dt.datetime]:
 def ClearFailures(conn, key):
     conn.execute("DELETE FROM login_throttle WHERE key = ?", (key,))
     conn.commit()
+
+
+# --- Member details ------------------------------------------------------------
+
+
+def GetMember(conn, participant_id):
+    """Email, town, photo and verification details (a row, possibly empty)."""
+    conn.execute("INSERT OR IGNORE INTO member_info (participant_id) VALUES (?)", (participant_id,))
+    return conn.execute("SELECT * FROM member_info WHERE participant_id = ?", (participant_id,)).fetchone()
+
+
+def UpdateMember(conn, participant_id, **fields):
+    allowed = {"email", "town", "zip", "photo_path", "verified_at", "verified_country", "verified_ref", "last_login_at", "reminders_sent"}
+    assert set(fields) <= allowed, fields
+    GetMember(conn, participant_id)
+    for key, value in fields.items():
+        if isinstance(value, dt.datetime):
+            value = _Iso(value)
+        conn.execute(f"UPDATE member_info SET {key} = ? WHERE participant_id = ?", (value, participant_id))
+    conn.commit()
+
+
+def RecordLogin(conn, participant_id, now):
+    """Remember this login; return when they last logged in before it (or None)."""
+    previous = _Parse(GetMember(conn, participant_id)["last_login_at"])
+    UpdateMember(conn, participant_id, last_login_at=now)
+    return previous
+
+
+# --- ID-check sessions -----------------------------------------------------------
+
+
+def StartIdSession(conn, participant_id, purpose, provider, now):
+    session_id = secrets.token_urlsafe(16)
+    conn.execute(
+        "INSERT INTO id_sessions (id, participant_id, purpose, provider, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+        (session_id, participant_id, purpose, provider, _Iso(now)),
+    )
+    conn.commit()
+    return session_id
+
+
+def SetIdSessionReference(conn, session_id, reference):
+    conn.execute("UPDATE id_sessions SET reference = ? WHERE id = ?", (reference, session_id))
+    conn.commit()
+
+
+def FindIdSessionByReference(conn, reference):
+    return conn.execute("SELECT * FROM id_sessions WHERE reference = ?", (reference,)).fetchone()
+
+
+def GetIdSession(conn, session_id):
+    return conn.execute("SELECT * FROM id_sessions WHERE id = ?", (session_id,)).fetchone()
+
+
+def LatestIdSession(conn, participant_id, purpose):
+    return conn.execute(
+        "SELECT * FROM id_sessions WHERE participant_id = ? AND purpose = ? ORDER BY created_at DESC LIMIT 1",
+        (participant_id, purpose),
+    ).fetchone()
+
+
+def FinishIdSession(conn, session_id, status, reference, now):
+    conn.execute(
+        "UPDATE id_sessions SET status = ?, reference = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
+        (status, reference, _Iso(now), session_id),
+    )
+    conn.commit()
+
+
+# --- Recovery by email -------------------------------------------------------------
+
+
+def RequestRecovery(conn, participant_id, now):
+    """Start a recovery: returns (cancel token, code). The code works only after RECOVERY_WAIT."""
+    conn.execute(
+        "UPDATE recovery_requests SET state = 'replaced' WHERE participant_id = ? AND state = 'waiting'",
+        (participant_id,),
+    )
+    token = secrets.token_urlsafe(24)
+    code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
+    conn.execute(
+        """
+        INSERT INTO recovery_requests (id, participant_id, code_hash, requested_at, usable_from, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            token,
+            participant_id,
+            generate_password_hash(code, method="pbkdf2:sha256"),
+            _Iso(now),
+            _Iso(now + RECOVERY_WAIT),
+            _Iso(now + RECOVERY_VALID),
+        ),
+    )
+    conn.commit()
+    return token, code
+
+
+def PendingRecovery(conn, participant_id):
+    row = conn.execute(
+        "SELECT * FROM recovery_requests WHERE participant_id = ? AND state = 'waiting' ORDER BY requested_at DESC LIMIT 1",
+        (participant_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {"requested_at": _Parse(row["requested_at"]), "usable_from": _Parse(row["usable_from"]), "expires_at": _Parse(row["expires_at"])}
+
+
+def CancelRecovery(conn, token):
+    """Cancel a waiting recovery from the link in its email; returns the participant id or None."""
+    row = conn.execute("SELECT * FROM recovery_requests WHERE id = ? AND state = 'waiting'", (token,)).fetchone()
+    if row is None:
+        return None
+    conn.execute("UPDATE recovery_requests SET state = 'cancelled' WHERE id = ?", (token,))
+    conn.commit()
+    return row["participant_id"]
+
+
+def UseRecoveryCode(conn, participant_id, raw_code, now):
+    """'ok' (code used up), 'too_soon' (before the 48-hour wait ends), or 'wrong'."""
+    row = conn.execute(
+        "SELECT * FROM recovery_requests WHERE participant_id = ? AND state = 'waiting' ORDER BY requested_at DESC LIMIT 1",
+        (participant_id,),
+    ).fetchone()
+    if row is None or _Parse(row["expires_at"]) < now:
+        return "wrong"
+    code = NormalizeCode(raw_code)
+    if len(code) != CODE_LENGTH or not check_password_hash(row["code_hash"], code):
+        return "wrong"
+    if now < _Parse(row["usable_from"]):
+        return "too_soon"
+    conn.execute("UPDATE recovery_requests SET state = 'used' WHERE id = ?", (row["id"],))
+    conn.commit()
+    return "ok"

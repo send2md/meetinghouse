@@ -31,7 +31,12 @@ DB_PATH = os.environ.get("MEETINGHOUSE_DB", os.path.join(os.path.dirname(__file_
 def main():
     conn = persistence.Connect(DB_PATH)
     house = persistence.LoadHouse(conn)
-    closed = tick_runner.RunTick(house, conn, dt.datetime.utcnow())
+    now = dt.datetime.utcnow()
+    closed = tick_runner.RunTick(house, conn, now)
+    import security
+
+    security.InitSchema(conn)
+    tick_runner.SendRenewalReminders(house, conn, now)
     for topic in closed:
         print(f"{topic.subsection.value}: '{topic.title}' closed {topic.result.value}")
 

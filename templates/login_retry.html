@@ -3,7 +3,7 @@
 {% block content %}
 <div class="card" style="max-width:420px;margin:2rem auto;">
   <h1>Hmm</h1>
-  <p>There's already a Participant logging in as <strong>{{ username }}</strong>, but
+  <p>There's already a Member logging in as <strong>{{ username }}</strong>, but
     that password didn't match.</p>
 
   <form method="post" action="{{ url_for('LoginPassword') }}">
@@ -17,7 +17,6 @@
     <p><input type="submit" value="This is a new login" class="secondary"></p>
   </form>
 
-  <p class="muted">Forgot your password? Ask the administrator to mail you a recovery letter,
-    then <a href="{{ url_for('LoginCode') }}">use the code from your letter</a>.</p>
+  <p class="muted"><a href="{{ url_for('LoginRecover') }}">Forgot your password?</a></p>
 </div>
 {% endblock %}
