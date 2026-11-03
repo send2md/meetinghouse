@@ -95,52 +95,65 @@ def Seed(db_path, upload_dir, now=None):
 
     yes, no, abstain = VoteChoice.YES, VoteChoice.NO, VoteChoice.ABSTAIN
 
-    # 1. Decided a while ago: a cleanup day (passed).
-    cleanup = house.CreateTopic(
-        people["grace"], Subsection.FORUM, "Spring cleanup day", Ago(70),
-        description="The yard and the shed need a good clearing out before summer.",
-        poll_question="Shall we hold a cleanup day on the first Saturday in May?",
+    # 1. Decided a while ago (passed): plastic bags.
+    bags = house.CreateTopic(
+        people["grace"], Subsection.FORUM, "Plastic bags at the grocery store", Ago(70),
+        description="Plastic bags blow into the creek every spring. Some towns have asked their stores to stop handing them out.",
+        poll_question="Shall we ask our grocery stores to stop giving out plastic bags?",
     )
-    Comment(cleanup, "samuel", "I can bring two rakes and the wheelbarrow.", Ago(69))
-    Comment(cleanup, "hannah", "Could we start at 10 rather than 9? The bus from Lansing gets in at 9:40.", Ago(68))
-    Vote(cleanup, "grace", yes, "The shed is a hazard as it is.", Ago(68))
-    Vote(cleanup, "samuel", yes, "Happy to help.", Ago(67))
-    Vote(cleanup, "hannah", yes, "Yes, if we start at 10.", Ago(66))
-    Vote(cleanup, "thomas", abstain, "I'll be away that weekend, but I don't stand in the way.", Ago(66))
-    Vote(cleanup, "ruth", yes, "A good way to meet the newer Members, too.", Ago(65))
-    Look(cleanup, "elijah", Ago(65))
+    Comment(bags, "samuel", "Most of us already bring cloth bags. The stores might welcome being asked.", Ago(69))
+    Comment(bags, "hannah", "Paper bags tear in the rain, though. Could the stores keep a few for people who forget?", Ago(68))
+    Vote(bags, "grace", yes, "The creek cleanup found more bags than anything else.", Ago(68))
+    Vote(bags, "samuel", yes, "It's a request, not a law. Easy to try.", Ago(67))
+    Vote(bags, "hannah", yes, "Yes, as long as there are spares for people who forget.", Ago(66))
+    Vote(bags, "thomas", abstain, "I'm not sure it will change much, but I won't stand in the way.", Ago(66))
+    Vote(bags, "ruth", yes, "Small changes add up.", Ago(65))
+    Look(bags, "elijah", Ago(65))
     tick_runner.RunTick(house, conn, Ago(30))
 
-    # 2. Open, with a Question attached later by someone else: chairs.
-    chairs = house.CreateTopic(
-        people["samuel"], Subsection.FORUM, "Chairs for the hall", Ago(12),
-        description="Three of our folding chairs broke at the last meeting, and more are wobbly. What should we do?",
+    # 2. Open, with a Question attached later by someone else: daylight saving time.
+    clocks = house.CreateTopic(
+        people["samuel"], Subsection.FORUM, "Changing the clocks twice a year", Ago(12),
+        description="We just turned the clocks back again. Does anyone else find the change hard?",
     )
-    Comment(chairs, "ruth", "I looked at repairing them. New hinges cost almost as much as a new chair.", Ago(11, 20))
-    Comment(chairs, "dorothy", "The library is giving away its old wooden chairs in December.\n\nThey're heavier, but they last. We could take 30 of those.", Ago(11, 2))
-    Comment(chairs, "thomas", "Heavy chairs are hard for some of us to set up. Could we buy a mix?", Ago(10))
-    house.AttachQuestion(chairs.id, people["dorothy"], "Shall we take 30 of the library's wooden chairs and buy 10 light folding ones?", Ago(9))
-    Vote(chairs, "dorothy", yes, "Free chairs that last, plus a few light ones for anyone who needs them.", Ago(9))
-    Vote(chairs, "samuel", yes, "A sensible mix.", Ago(8))
-    Vote(chairs, "thomas", yes, "Thank you for including light ones.", Ago(8))
-    Vote(chairs, "ruth", abstain, "I'd rather buy all new, but I won't stand in the way.", Ago(7))
-    Vote(chairs, "marcus", no, "Where would we store 40 chairs? The closet holds 25.", Ago(6))
-    Comment(chairs, "grace", "Marcus is right about the closet. The shed has room since the cleanup.", Ago(5))
-    Look(chairs, "hannah", Ago(5))
+    Comment(clocks, "ruth", "It takes me a week to get used to it, every time.", Ago(11, 20))
+    Comment(clocks, "dorothy", "I'd keep one time all year.\n\nThe question is which one: lighter evenings, or lighter mornings?", Ago(11, 2))
+    Comment(clocks, "thomas", "Lighter mornings matter for children waiting for the school bus in December.", Ago(10))
+    house.AttachQuestion(clocks.id, people["dorothy"], "Do we want to change to no daylight saving time?", Ago(9))
+    Vote(clocks, "dorothy", yes, "One time all year, and the mornings stay light for the school bus.", Ago(9))
+    Vote(clocks, "samuel", yes, "No more changing the clocks.", Ago(8))
+    Vote(clocks, "thomas", yes, "For the children's mornings.", Ago(8))
+    Vote(clocks, "ruth", abstain, "I'd rather keep summer evenings, but I won't stand in the way.", Ago(7))
+    Vote(clocks, "marcus", no, "Summer evenings are when I'm outdoors. I'd lose an hour of light.", Ago(6))
+    Comment(clocks, "grace", "Marcus has a point. Could we ask which people care about more, mornings or evenings?", Ago(5))
+    Look(clocks, "hannah", Ago(5))
 
-    # 3. Open, Discussion only (no Question yet): a garden.
-    garden = house.CreateTopic(
-        people["hannah"], Subsection.FORUM, "A shared garden behind the meetinghouse", Ago(4),
-        description="The strip of lawn behind the building gets full sun. Would anyone like to grow vegetables there together?",
+    # 3. Open, with a Question from the start: vaccines.
+    vaccines = house.CreateTopic(
+        people["hannah"], Subsection.FORUM, "Vaccines", Ago(5),
+        description="People here feel strongly about this, on both sides. Let's hear each other out.",
+        poll_question="Do we want to allow vaccines in our bodies?",
     )
-    Comment(garden, "elijah", "I'd help. I have seeds left over from this year.", Ago(3, 12))
-    Comment(garden, "grace", "Who would water it in August, when half of us are away?", Ago(3))
-    Comment(garden, "hannah", "Good question. Maybe a sign-up sheet, a week each?", Ago(2))
+    Comment(vaccines, "elijah", "I think each person should decide what goes into their own body, with their doctor.", Ago(4, 12))
+    Comment(vaccines, "grace", "Vaccines also protect people who can't have them, like newborns. That's why I care what my neighbors do.", Ago(4))
+    Comment(vaccines, "marcus", "Can we agree on something narrower? For example, that nobody is pressured either way.", Ago(3))
+    Vote(vaccines, "grace", yes, "They protect the people around us, not just ourselves.", Ago(3))
+    Vote(vaccines, "elijah", no, "Not as a group decision. It belongs to each person.", Ago(2))
+    Vote(vaccines, "marcus", abstain, "I'd rather we keep talking before anyone Votes.", Ago(2))
 
-    # 4. Open in the Rules Committee: a small change to the Forum Approval.
+    # 4. Open, Discussion only (no Question yet): trees.
+    trees = house.CreateTopic(
+        people["hannah"], Subsection.FORUM, "Trees along Main Street", Ago(4),
+        description="Main Street is hot and bare in summer. Should we plant shade trees?",
+    )
+    Comment(trees, "elijah", "I'd help plant them. Maples do well here.", Ago(3, 12))
+    Comment(trees, "grace", "Who would water them for the first two summers?", Ago(3))
+    Comment(trees, "hannah", "Good question. Maybe each shop could look after the tree in front of it?", Ago(2))
+
+    # 5. Open in the Rules Committee: a small change to the Forum Approval.
     rules = house.CreateTopic(
         people["thomas"], Subsection.RULES, None, Ago(6),
-        description="Two good Forum proposals failed this year with 64% in favor. A slightly lower bar would let those pass.",
+        description="Two Forum Questions failed this year with 64% in favor. A slightly lower bar would have let those pass.",
         proposed_change=RuleChange(Subsection.FORUM, "approval_fraction", 0.64),
     )
     Comment(rules, "ruth", "I'd rather we talk until more of us agree. Two-thirds is a Quaker kind of number.", Ago(5))

@@ -165,7 +165,7 @@ def test_sandbox_seed_fills_an_empty_database_only(tmp_path):
 
     house = persistence.LoadHouse(persistence.Connect(str(tmp_path / "s.db")))
     titles = {t.title for t in house.topics.values()}
-    assert "Chairs for the hall" in titles and "Spring cleanup day" in titles
+    assert "Changing the clocks twice a year" in titles and "Vaccines" in titles
     assert any(t.closed for t in house.topics.values())
     assert any(not t.HasPoll() for t in house.topics.values())
     try:

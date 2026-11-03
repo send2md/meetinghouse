@@ -1,0 +1,7 @@
+RewriteEngine On
+RewriteBase /
+# Only answer as sandbox.meetinghouse.ai, never as meetinghouse.ai/sandbox/.
+RewriteCond %{HTTP_HOST} !^sandbox\. [NC]
+RewriteRule ^ - [F]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ index.fcgi/$1 [L]
