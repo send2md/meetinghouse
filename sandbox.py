@@ -23,7 +23,7 @@ import zlib
 import persistence
 import security
 import tick_runner
-from meetinghouse import RuleChange, Subsection, VoteChoice
+from meetinghouse import RuleChange, Subsection, UtcNow, VoteChoice
 
 MEMBERS = [
     # user name, name, town, postal code, photo color
@@ -54,7 +54,7 @@ def _Photo(color, size=160):
 
 
 def Seed(db_path, upload_dir, now=None):
-    now = now or dt.datetime.utcnow().replace(microsecond=0)
+    now = now or UtcNow().replace(microsecond=0)
     conn = persistence.Connect(db_path)
     security.InitSchema(conn)
     house = persistence.LoadHouse(conn)

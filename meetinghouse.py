@@ -139,6 +139,11 @@ def AllowedValues(current, low=SETTING_MIN, high=SETTING_MAX):
 _EPSILON = 1e-9
 
 
+def UtcNow():
+    """The current time in UTC, without a time-zone label (how every time here is stored)."""
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+
+
 def Percent(fraction):
     """Format a fraction the way people read it: 0.667 -> '66.7%', 0.5 -> '50%'."""
     text = f"{fraction * 100:.1f}"

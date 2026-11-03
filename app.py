@@ -35,6 +35,7 @@ from webauthn.helpers.structs import (
 from werkzeug.security import check_password_hash
 
 import idcheck
+import meetinghouse
 import mailer
 import persistence
 import security
@@ -80,7 +81,7 @@ house = persistence.LoadHouse(conn)
 
 def Now():
     """The one place this app reads the wall clock, so it stays swappable."""
-    return dt.datetime.utcnow()
+    return meetinghouse.UtcNow()
 
 
 security.InitSchema(conn)

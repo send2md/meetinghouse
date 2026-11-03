@@ -11,7 +11,6 @@ digest is actually informative.
 
 from __future__ import annotations
 
-import datetime as dt
 import os
 import sys
 
@@ -24,6 +23,7 @@ except ImportError:
 
 import persistence
 import tick_runner
+from meetinghouse import UtcNow
 
 DB_PATH = os.environ.get("MEETINGHOUSE_DB", os.path.join(os.path.dirname(__file__), "meetinghouse.db"))
 
@@ -31,7 +31,7 @@ DB_PATH = os.environ.get("MEETINGHOUSE_DB", os.path.join(os.path.dirname(__file_
 def main():
     conn = persistence.Connect(DB_PATH)
     house = persistence.LoadHouse(conn)
-    now = dt.datetime.utcnow()
+    now = UtcNow()
     closed = tick_runner.RunTick(house, conn, now)
     import security
 
