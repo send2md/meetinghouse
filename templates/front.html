@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Meetinghouse{% endblock %}
+{% block content %}
+<div class="front">
+  <div class="sketch">
+    <img src="{{ url_for('static', filename='meetinghouse-sketch.png') }}" alt="A drawing of a meetinghouse, with people gathered inside and the world above them">
+  </div>
+  <div class="doors">
+    <div class="card">
+      <h1>Log in</h1>
+      <form method="post" action="{{ url_for('Login') }}">
+        <label>Meetinghouse User Name</label>
+        <input type="text" name="username" required>
+        <p><input type="submit" value="Log in"></p>
+      </form>
+    </div>
+    <div class="or">OR</div>
+    <a class="look" href="{{ url_for('LookAround') }}">Just look around?</a>
+    {% if sandbox and sandbox_members %}
+    <div class="card" style="margin-top:2rem;">
+      <h2>Try it as a pretend Member</h2>
+      <p class="muted">Pick anyone below to step into their account. Nothing here is real.</p>
+      {% for m in sandbox_members %}
+        <form class="inline" method="post" action="{{ url_for('SandboxStepIn', username=m.username) }}">
+          <button type="submit" class="secondary">{{ m.name }}</button>
+        </form>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

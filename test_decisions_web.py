@@ -203,3 +203,46 @@ def test_no_old_words_on_the_main_pages(client):
         page = _Text(test_client.get(path))
         for old_word in ("Topic", "Participant", "quiet time", "Quiet time", "favour", "Poll question", "turnout"):
             assert old_word not in page, (path, old_word)
+
+
+def test_anyone_can_just_look_around_but_only_members_take_part(client):
+    test_client, app_module = client
+    _Setup(test_client, app_module)
+    conversation_id = _NewForumConversation(test_client)
+    test_client.post(f"/topic/{conversation_id}/post", data={"text": "Blue is calm."})
+    test_client.get("/logout")
+
+    front = _Text(test_client.get("/"))
+    assert "meetinghouse-sketch.png" in front and ">OR<" in front and "Just look around?" in front
+    look = _Text(test_client.get("/look"))
+    assert "Paint the hall" in look and "You're looking around without logging in" in look
+    assert "New Conversation" not in look
+    page = _Text(test_client.get(f"/topic/{conversation_id}"))
+    assert "Paint it blue?" in page and "Blue is calm." in page
+    assert 'name="choice"' not in page and "Add a Comment" not in page
+    assert "Paint the hall" in _Text(test_client.get("/subsection/forum"))
+    assert "Paint the hall" in _Text(test_client.get("/archive?q=paint"))
+    test_client.post(f"/topic/{conversation_id}/post", data={"text": "Sneaky."})
+    assert all(p.text != "Sneaky." for p in app_module.house.topics[conversation_id].posts)
+
+
+def test_tabs_show_where_you_are(client):
+    test_client, app_module = client
+    _Setup(test_client, app_module)
+    page = test_client.get("/subsection/rules").data.decode()
+    assert 'href="/subsection/rules" class="active"' in page
+    assert 'href="/subsection/forum" class=""' in page
+
+
+def test_jury_list_leaves_out_yourself_and_is_alphabetical(client):
+    test_client, app_module = client
+    people = _Setup(test_client, app_module)  # Jane Doe and Bob Roe; Bob is logged in
+    test_client.get("/logout")
+    Join(test_client, app_module, "al", "Al Zimmer")
+    test_client.get("/logout")
+    Join(test_client, app_module, "cy", "Cy Adams")
+    As(test_client, "bob", people["bob"][1])
+    form = _Text(test_client.get("/topic/new/jury"))
+    options = form[form.index('name="target_participant_id"'):form.index("</select>")]
+    assert "Bob Roe" not in options
+    assert options.index("Cy Adams") < options.index("Jane Doe") < options.index("Al Zimmer")

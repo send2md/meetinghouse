@@ -203,8 +203,20 @@ def Dashboard():
     for a logged-out visitor, not a bounce through one.
     """
     if g.participant is None:
-        return render_template("login.html")
+        return render_template("front.html")
     now = Now()
+    return render_template(
+        "dashboard.html",
+        open_by_subsection=_OpenByCommittee(now),
+        now=now,
+        activated=security.IsActivated(conn, g.participant.id),
+        paused=security.IsActivated(conn, g.participant.id) and not g.participant.IsParticipant(now),
+        renew_soon=_RenewalDue(g.participant, now),
+        has_passkey=security.HasPasskeys(conn, g.participant.id),
+    )
+
+
+def _OpenByCommittee(now):
     open_by_subsection = {s: [] for s in Subsection}
     for topic in house.topics.values():
         if topic.closed:
@@ -215,15 +227,15 @@ def Dashboard():
         )
     for items in open_by_subsection.values():
         items.sort(key=lambda item: item["topic"].created_at)
-    return render_template(
-        "dashboard.html",
-        open_by_subsection=open_by_subsection,
-        now=now,
-        activated=security.IsActivated(conn, g.participant.id),
-        paused=security.IsActivated(conn, g.participant.id) and not g.participant.IsParticipant(now),
-        renew_soon=_RenewalDue(g.participant, now),
-        has_passkey=security.HasPasskeys(conn, g.participant.id),
-    )
+    return open_by_subsection
+
+
+@app.route("/look")
+def LookAround():
+    """"Just look around": everyone can see everything, without logging in."""
+    if g.participant is not None:
+        return redirect(url_for("Dashboard"))
+    return render_template("dashboard.html", open_by_subsection=_OpenByCommittee(Now()), guest=True)
 
 
 def _RenewalDue(participant, now):
@@ -423,6 +435,7 @@ def Register():
         email = request.form.get("email", "").strip()
         town = request.form.get("town", "").strip()
         zip_code = request.form.get("zip", "").strip()
+        country = request.form.get("country", "").strip()
         errors = []
         if not name:
             errors.append("Your whole real name is required.")
@@ -431,7 +444,9 @@ def Register():
         if not town:
             errors.append("Your town is required.")
         if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z \-]{1,9}", zip_code):
-            errors.append("Your ZIP code (or postal code) is required.")
+            errors.append("Your postal code is required.")
+        if not country:
+            errors.append("Your country is required.")
         if not request.form.get("agree"):
             errors.append("Please tick the box to show you've read how your name, photo and ID are handled.")
         if errors:
@@ -455,7 +470,7 @@ def Register():
                 return render_template(
                     "username_taken.html", taken_username=username, suggestion=_SuggestUsername(username)
                 )
-            security.UpdateMember(conn, participant.id, email=email, town=town, zip=zip_code)
+            security.UpdateMember(conn, participant.id, email=email, town=town, zip=zip_code, country=country)
 
         session.pop("pending_username", None)
         session["participant_id"] = participant.id
@@ -920,9 +935,7 @@ def PasskeyRemove():
 
 @app.route("/subsection/<name>")
 def SubsectionView(name):
-    guard = RequireLogin()
-    if guard:
-        return guard
+    """Everyone can see everything: no login needed to read."""
     try:
         subsection = Subsection(name.capitalize())
     except ValueError:
@@ -953,7 +966,7 @@ def NewTopic(name):
         return render_template(
             "new_topic.html",
             subsection=subsection,
-            participants=sorted(house.participants.values(), key=lambda p: p.name),
+            participants=_JuryChoices(),
             settings=_SettingChoices(),
             form=request.form,
             **extra,
@@ -1012,6 +1025,17 @@ def NewTopic(name):
     return Form()
 
 
+def _JuryChoices():
+    """Who a Jury Conversation can be about: other current Members, by last name."""
+    now = Now()
+    people = [
+        p
+        for p in house.participants.values()
+        if p.id != g.participant.id and p.IsParticipant(now) and security.IsActivated(conn, p.id)
+    ]
+    return sorted(people, key=lambda p: (p.name.split()[-1].lower() if p.name.split() else "", p.name.lower()))
+
+
 def _SettingChoices():
     """Every changeable setting, its current value, and every value one vote may move it to."""
     choices = []
@@ -1045,9 +1069,7 @@ def _ParseRuleChange(form):
 
 @app.route("/topic/<topic_id>")
 def TopicDetail(topic_id):
-    guard = RequireLogin()
-    if guard:
-        return guard
+    """Everyone can read a Conversation; only Members can take part."""
     topic = house.topics.get(topic_id)
     if topic is None:
         abort(404)
@@ -1056,7 +1078,8 @@ def TopicDetail(topic_id):
     # Ask each Member once per Conversation, the first time they open it
     # with a Question they haven't voted on, whether they'd like to vote.
     ask_to_vote = False
-    if g.participant.IsActive(now) and not topic.closed:
+    member = g.participant
+    if member is not None and member.IsActive(now) and not topic.closed:
         with LOCK:
             try:
                 changed = house.MarkRead(topic_id, g.participant.id, now)
@@ -1081,8 +1104,8 @@ def TopicDetail(topic_id):
         entries.append({"kind": "post", "at": post.timestamp, "post": post})
     entries.sort(key=lambda e: e["at"])
 
-    my_vote = topic.CurrentVote(g.participant.id) if topic.HasPoll() else None
-    can_act = g.participant.IsActive(now) and not topic.closed
+    my_vote = topic.CurrentVote(member.id) if topic.HasPoll() and member else None
+    can_act = member is not None and member.IsActive(now) and not topic.closed
     return render_template(
         "topic.html",
         topic=topic,
@@ -1095,8 +1118,8 @@ def TopicDetail(topic_id):
         can_act=can_act,
         ask_question=can_act and not topic.HasPoll(),
         ask_to_vote=ask_to_vote,
-        votes_left=topic.RestartsLeft(g.participant.id, "votes"),
-        posts_left=topic.RestartsLeft(g.participant.id, "posts"),
+        votes_left=topic.RestartsLeft(member.id, "votes") if member else 0,
+        posts_left=topic.RestartsLeft(member.id, "posts") if member else 0,
         restart_limit=RESTART_LIMIT,
         setting_now=getattr(house.current_rules[topic.proposed_change.subsection], topic.proposed_change.setting)
         if topic.proposed_change
@@ -1228,9 +1251,6 @@ def CurrentRules():
 
 @app.route("/archive")
 def Archive():
-    guard = RequireLogin()
-    if guard:
-        return guard
     query = request.args.get("q", "").strip()
     results = house.SearchArchive(query) if query else []
     return render_template("archive.html", query=query, results=results)

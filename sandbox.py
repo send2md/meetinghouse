@@ -26,7 +26,7 @@ import tick_runner
 from meetinghouse import RuleChange, Subsection, VoteChoice
 
 MEMBERS = [
-    # user name, name, town, ZIP, photo color
+    # user name, name, town, postal code, photo color
     ("ruth", "Ruth Alvarez", "Ithaca", "14850", (196, 120, 92)),
     ("samuel", "Samuel Okafor", "Ithaca", "14850", (92, 130, 170)),
     ("dorothy", "Dorothy Chen", "Trumansburg", "14886", (150, 110, 160)),
@@ -79,7 +79,7 @@ def Seed(db_path, upload_dir, now=None):
         with open(photo, "wb") as f:
             f.write(_Photo(color))
         security.UpdateMember(
-            conn, person.id, email=f"{username}@example.com", town=town, zip=zip_code, photo_path=photo,
+            conn, person.id, email=f"{username}@example.com", town=town, zip=zip_code, country="United States", photo_path=photo,
             verified_at=joined, verified_country="United States", verified_ref="sandbox",
         )
         people[username] = person.id

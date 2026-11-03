@@ -35,6 +35,16 @@ header.site nav { display: flex; gap: 0.85rem; flex-wrap: wrap; font-size: 0.95r
 header.site .account-box { display: flex; gap: 0.75rem; align-items: center; margin-left: auto; white-space: nowrap; }
 header.site nav a { color: var(--ink); text-decoration: none; }
 header.site nav a:hover { text-decoration: underline; }
+header.site nav.tabs { gap: 0.25rem; align-self: flex-end; margin-bottom: -0.75rem; }
+header.site nav.tabs a {
+  padding: 0.45rem 0.8rem; border: 1px solid transparent; border-bottom: none;
+  border-radius: 6px 6px 0 0;
+}
+header.site nav.tabs a:hover { background: var(--bg); text-decoration: none; }
+header.site nav.tabs a.active {
+  background: var(--bg); border-color: var(--line); color: var(--accent); font-weight: 600;
+  position: relative; top: 1px;
+}
 header.site .spacer { flex: 1; }
 header.site .who { color: var(--muted); font-size: 0.9rem; }
 
@@ -122,3 +132,11 @@ code { font-family: "Courier New", monospace; font-size: 0.9em; word-break: brea
 .member-photo { width: 96px; height: 96px; object-fit: cover; border-radius: 50%; float: right; margin-left: 1rem; }
 
 .sandbox-banner { background: #fff4d6; border-bottom: 1px solid #e8d49a; padding: 0.5rem 1rem; text-align: center; }
+
+.front { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2.5rem; align-items: center; max-width: 980px; margin: 1rem auto; }
+.front .sketch img { width: 100%; height: auto; display: block; }
+.front .doors { text-align: center; }
+.front .doors .card { text-align: left; }
+.front .or { font-size: 5rem; font-weight: 800; color: var(--accent); line-height: 1; margin: 1.5rem 0; }
+.front .look { font-size: 2rem; font-weight: 700; color: var(--accent); }
+@media (max-width: 760px) { .front { grid-template-columns: 1fr; } .front .sketch { max-width: 360px; margin: 0 auto; } }

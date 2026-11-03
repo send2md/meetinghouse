@@ -95,7 +95,7 @@ def Pid(app_module, name="Jane Doe"):
 def Register(test_client, username, name="Jane Doe", **overrides):
     """Step one of joining: /login with a new user name, then the /register form."""
     test_client.post("/login", data={"username": username})
-    data = {"name": name, "email": f"{username}@example.com", "town": "Ithaca", "zip": "14850", "agree": "1"}
+    data = {"name": name, "email": f"{username}@example.com", "town": "Ithaca", "zip": "14850", "country": "United States", "agree": "1"}
     data.update(overrides)
     return test_client.post("/register", data=data, follow_redirects=True)
 

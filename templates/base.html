@@ -8,18 +8,26 @@
 <body>
   <header class="site">
     <span class="brand">🕊 Meetinghouse</span>
-    {% if current_participant %}
-    <nav>
-      <a href="{{ url_for('Dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('SubsectionView', name='forum') }}">Forum Committee</a>
-      <a href="{{ url_for('SubsectionView', name='rules') }}">Rules Committee</a>
-      <a href="{{ url_for('SubsectionView', name='jury') }}">Jury Committee</a>
-      <a href="{{ url_for('Archive') }}">Archive</a>
-      <a href="{{ url_for('Summary') }}">Daily Summary</a>
-      <a href="{{ url_for('CurrentRules') }}">Current Rules</a>
-      <a href="{{ url_for('Account') }}">Account</a>
+    {% set ep = request.endpoint %}
+    {% set committee = (request.view_args or {}).get('name') %}
+    <nav class="tabs">
+      {% if current_participant %}
+      <a href="{{ url_for('Dashboard') }}" class="{{ 'active' if ep == 'Dashboard' }}">Dashboard</a>
+      {% else %}
+      <a href="{{ url_for('LookAround') }}" class="{{ 'active' if ep == 'LookAround' }}">Look around</a>
+      {% endif %}
+      <a href="{{ url_for('SubsectionView', name='forum') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'forum' }}">Forum Committee</a>
+      <a href="{{ url_for('SubsectionView', name='rules') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'rules' }}">Rules Committee</a>
+      <a href="{{ url_for('SubsectionView', name='jury') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'jury' }}">Jury Committee</a>
+      <a href="{{ url_for('Archive') }}" class="{{ 'active' if ep == 'Archive' }}">Archive</a>
+      {% if current_participant %}
+      <a href="{{ url_for('Summary') }}" class="{{ 'active' if ep == 'Summary' }}">Daily Summary</a>
+      {% endif %}
+      <a href="{{ url_for('CurrentRules') }}" class="{{ 'active' if ep == 'CurrentRules' }}">Current Rules</a>
+      {% if current_participant %}
+      <a href="{{ url_for('Account') }}" class="{{ 'active' if ep == 'Account' }}">Account</a>
+      {% endif %}
     </nav>
-    {% endif %}
     <span class="account-box">
     {% if current_participant %}
       <span class="who">{{ current_participant.name }}</span>

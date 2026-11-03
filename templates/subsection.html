@@ -2,7 +2,7 @@
 {% block title %}{{ subsection.value }} Committee — Meetinghouse{% endblock %}
 {% block content %}
 <h1>{{ subsection.value }} Committee
-  <a class="button" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Conversation</a>
+  {% if current_participant %}<a class="button" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Conversation</a>{% endif %}
 </h1>
 <p class="muted">
   Minimum Life {{ rule.min_life|humanage }} · Seasoning Time {{ rule.quiet_time|humanage }} ·

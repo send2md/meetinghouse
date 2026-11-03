@@ -64,15 +64,15 @@
 </div>
 
 <div class="card">
-  <h3>Email, town and ZIP code</h3>
+  <h3>Email and where you live</h3>
   <form method="post" action="{{ url_for('AccountDetails') }}">
     <label>Email address <span class="muted">(private; used for reminders and recovery)</span></label>
     <input type="email" name="email" required value="{{ member['email'] }}">
     <p><input type="submit" value="Save"></p>
   </form>
-  <p>Town: <strong>{{ member['town'] }}</strong> · ZIP code: <strong>{{ member['zip'] or '—' }}</strong>
+  <p>Town: <strong>{{ member['town'] }}</strong> · Postal code: <strong>{{ member['zip'] or '—' }}</strong> · Country: <strong>{{ member['country'] or member['verified_country'] or '—' }}</strong>
     <span class="muted">(public, as a rough spot on the map)</span></p>
-  <p class="muted">Moving? Your town and ZIP code decide which local group you belong to, so they change only when you
+  <p class="muted">Moving? Your town, postal code and country decide which local group you belong to, so they change only when you
     prove your new address with an ID check.</p>
 </div>
 

@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS member_info (
     email TEXT NOT NULL DEFAULT '',
     town TEXT NOT NULL DEFAULT '',
     zip TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
     photo_path TEXT NOT NULL DEFAULT '',
     verified_at TEXT,
     verified_country TEXT NOT NULL DEFAULT '',
@@ -106,8 +107,9 @@ NO_PASSWORD = "!disabled"
 def InitSchema(conn):
     conn.executescript(SCHEMA)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(member_info)")}
-    if "zip" not in columns:
-        conn.execute("ALTER TABLE member_info ADD COLUMN zip TEXT NOT NULL DEFAULT ''")
+    for column in ("zip", "country"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE member_info ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 
@@ -274,7 +276,7 @@ def GetMember(conn, participant_id):
 
 
 def UpdateMember(conn, participant_id, **fields):
-    allowed = {"email", "town", "zip", "photo_path", "verified_at", "verified_country", "verified_ref", "last_login_at", "reminders_sent"}
+    allowed = {"email", "town", "zip", "country", "photo_path", "verified_at", "verified_country", "verified_ref", "last_login_at", "reminders_sent"}
     assert set(fields) <= allowed, fields
     GetMember(conn, participant_id)
     for key, value in fields.items():

@@ -12,10 +12,12 @@
     <p class="muted">Used for your welcome, yearly reminders, and getting back in if you lose your device. Not shown to anyone.</p>
     <label>Town</label>
     <input type="text" name="town" required value="{{ form.get('town', '') }}">
-    <label>ZIP code</label>
+    <label>Postal code</label>
     <input type="text" name="zip" required value="{{ form.get('zip', '') }}" autocomplete="postal-code" maxlength="10">
+    <label>Country</label>
+    <input type="text" name="country" required value="{{ form.get('country', '') }}" autocomplete="country-name">
     <p class="muted">Shown publicly as a rough spot on the map. We don't keep your street address.
-      The ID check confirms your town and ZIP code.</p>
+      The ID check confirms your town, postal code and country.</p>
 
     <div class="card notice">
       <p><strong>Please read before joining.</strong></p>
@@ -24,7 +26,7 @@
         <li>Your photo is the selfie from your ID check.</li>
         <li>The ID check is done by an outside company you choose from an approved list{% if providers %}
           ({% for p in providers %}{{ p.label }}{{ ", " if not loop.last }}{% endfor %}){% endif %}. It sees your ID, your face
-          and your proof of address. Meetinghouse keeps only the result, the date, your country, your town and ZIP code,
+          and your proof of address. Meetinghouse keeps only the result, the date, your country, your town and postal code,
           and a reference number.</li>
         <li>Once a year you'll confirm you're still here with a quick selfie.</li>
       </ul>

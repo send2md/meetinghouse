@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Meetinghouse{% endblock %}
 {% block content %}
-{% if not activated %}
+{% if guest %}
+<div class="card notice">
+  <p>You're looking around without logging in. Everyone can see everything here; only Members can comment, Vote or
+    start a Conversation. <a class="button" href="{{ url_for('Dashboard') }}">Log in or join</a></p>
+</div>
+{% elif not activated %}
 <div class="card notice">
   <p><strong>You haven't finished joining.</strong> You can read along; once you've added a passkey and passed
     the ID check you can Vote, comment and start Conversations. <a class="button" href="{{ url_for('Join') }}">Finish joining</a></p>
@@ -24,7 +29,7 @@
 <h1>Open Conversations</h1>
 {% for subsection, items in open_by_subsection.items() %}
   <div class="card">
-    <h2>{{ subsection.value }} Committee <a class="button secondary" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Conversation</a></h2>
+    <h2>{{ subsection.value }} Committee {% if not guest %}<a class="button secondary" style="float:right" href="{{ url_for('NewTopic', name=subsection.value|lower) }}">New Conversation</a>{% endif %}</h2>
     {% if items %}
       <table>
         <tr><th>Conversation</th><th>Age</th><th>Contactors</th><th>Yes</th>{% if subsection.value == "Forum" %}<th>Abstain</th>{% endif %}<th>No</th></tr>

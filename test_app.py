@@ -20,7 +20,7 @@ def test_join_form_asks_for_name_email_town_zip_and_agreement(client):
     test_client, app_module = client
     test_client.post("/login", data={"username": "janedoe"})
     form = test_client.get("/register").data
-    for field in (b'name="name"', b'name="email"', b'name="town"', b'name="zip"', b'name="agree"'):
+    for field in (b'name="name"', b'name="email"', b'name="town"', b'name="zip"', b'name="country"', b'name="agree"'):
         assert field in form
     assert b'name="password"' not in form  # passkeys only, never a password
     for word in (b"thumbprint", b"maiden"):
@@ -31,7 +31,8 @@ def test_join_form_asks_for_name_email_town_zip_and_agreement(client):
     assert "Your whole real name is required." in text
     assert "A working email address is required" in text
     assert "Your town is required." in text
-    assert "Your ZIP code (or postal code) is required." in text
+    assert "Your postal code is required." in text
+    assert "Your country is required." in text
     assert "tick the box" in text
     assert not app_module.house.participants
 
@@ -42,7 +43,8 @@ def test_joining_step_one_creates_the_account_and_goes_to_finish_joining(client)
     assert b"Finish joining" in resp.data
     pid = Pid(app_module)
     member = app_module.security.GetMember(app_module.conn, pid)
-    assert (member["email"], member["town"], member["zip"]) == ("janedoe@example.com", "Ithaca", "14850")
+    assert (member["email"], member["town"], member["zip"], member["country"]) == (
+        "janedoe@example.com", "Ithaca", "14850", "United States")
     creds = app_module.persistence.GetCredentialsByUsername(app_module.conn, "janedoe")
     assert creds["password_hash"] == app_module.security.NO_PASSWORD
 
