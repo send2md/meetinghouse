@@ -173,3 +173,19 @@ def test_sandbox_seed_fills_an_empty_database_only(tmp_path):
         assert False, "should refuse a database that already has Members"
     except SystemExit:
         pass
+
+
+def test_stored_seasoning_time_follows_the_fixed_value(tmp_path):
+    import datetime as dt
+
+    import persistence
+    from meetinghouse import RuleConfig, Subsection
+
+    conn = persistence.Connect(str(tmp_path / "old.db"))
+    old = RuleConfig(quiet_time=dt.timedelta(weeks=1), min_life=dt.timedelta(weeks=3), voter_fraction=0.25, approval_fraction=0.63)
+    persistence.SaveRules(conn, Subsection.FORUM, old)
+    house = persistence.LoadHouse(conn)
+    assert house.current_rules[Subsection.FORUM].quiet_time == dt.timedelta(weeks=3)
+    assert house.current_rules[Subsection.FORUM].approval_fraction == 0.63  # voted settings are kept
+    reloaded = persistence.LoadHouse(persistence.Connect(str(tmp_path / "old.db")))
+    assert reloaded.current_rules[Subsection.FORUM].quiet_time == dt.timedelta(weeks=3)

@@ -15,12 +15,15 @@ Participant dataclass.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 import sqlite3
 from typing import Optional
 
 from meetinghouse import (
+    MINIMUM_LIFE,
+    SEASONING_TIME,
     DiscussionPost,
     Dismissal,
     DismissalNote,
@@ -520,6 +523,13 @@ def LoadHouse(conn) -> Meetinghouse:
         )
         for row in rule_rows
     }
+    # Seasoning Time and Minimum Life are fixed by the design, not by a
+    # Rules vote, so the stored values follow the code when it changes.
+    for subsection, rule in list(rules.items()):
+        fixed = dataclasses.replace(rule, quiet_time=SEASONING_TIME, min_life=MINIMUM_LIFE)
+        if fixed != rule:
+            rules[subsection] = fixed
+            SaveRules(conn, subsection, fixed)
     house = Meetinghouse(rules=rules or None)
 
     for row in conn.execute("SELECT * FROM participants"):

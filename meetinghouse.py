@@ -214,25 +214,29 @@ class RuleChange:
         return f"{self.subsection.value} {SETTING_NAMES.get(self.setting, self.setting)}"
 
 
+# Fixed for every Committee: no Rules vote can change these.
+SEASONING_TIME = dt.timedelta(weeks=3)
+MINIMUM_LIFE = dt.timedelta(weeks=3)
+
+
 def DefaultRules():
     """Build the starting RuleConfig for each subsection, per the spec."""
-    three_weeks = dt.timedelta(weeks=3)
     return {
         Subsection.FORUM: RuleConfig(
-            quiet_time=dt.timedelta(weeks=1),
-            min_life=three_weeks,
+            quiet_time=SEASONING_TIME,
+            min_life=MINIMUM_LIFE,
             voter_fraction=1 / 4,
             approval_fraction=2 / 3,
         ),
         Subsection.RULES: RuleConfig(
-            quiet_time=dt.timedelta(weeks=2),
-            min_life=three_weeks,
+            quiet_time=SEASONING_TIME,
+            min_life=MINIMUM_LIFE,
             voter_fraction=1 / 2,
             approval_fraction=51 / 100,
         ),
         Subsection.JURY: RuleConfig(
-            quiet_time=dt.timedelta(weeks=2),
-            min_life=three_weeks,
+            quiet_time=SEASONING_TIME,
+            min_life=MINIMUM_LIFE,
             voter_fraction=1 / 2,
             approval_fraction=1 / 5,
         ),

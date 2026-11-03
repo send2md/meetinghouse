@@ -134,7 +134,7 @@ def test_activity_restarts_quiet_clock():
     for person in people:
         house.CastVote(topic.id, person.id, VoteChoice.YES, "Fine by me.", vote_time)
 
-    almost_quiet = vote_time + Days(6) + dt.timedelta(hours=23)
+    almost_quiet = vote_time + Days(20) + dt.timedelta(hours=23)
     house.Tick(almost_quiet)
     assert not topic.closed
 
@@ -146,7 +146,7 @@ def test_activity_restarts_quiet_clock():
     house.Tick(would_have_closed)
     assert not topic.closed
 
-    house.Tick(almost_quiet + Days(7) + dt.timedelta(hours=1))
+    house.Tick(almost_quiet + Days(21) + dt.timedelta(hours=1))
     assert topic.closed
 
 
@@ -547,3 +547,10 @@ def test_initiator_is_pollster_when_starting_with_a_question():
     jury = house.CreateTopic(people[1].id, Subsection.JURY, "", START, target_participant_id=people[3].id)
     assert forum.pollster_id == people[0].id and forum.question_attached_at == START
     assert jury.pollster_id == people[1].id
+
+
+def test_seasoning_time_is_three_weeks_in_every_committee():
+    house = Meetinghouse()
+    for subsection in Subsection:
+        assert house.current_rules[subsection].quiet_time == Days(21)
+        assert house.current_rules[subsection].min_life == Days(21)
