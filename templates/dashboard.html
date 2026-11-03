@@ -15,7 +15,7 @@
 <div class="card notice">
   <p>Your yearly check is due by {{ renew_soon|day }}. <a href="{{ url_for('Account') }}">Do it now</a>.</p>
 </div>
-{% elif not has_passkey %}
+{% elif not has_passkey and not sandbox %}
 <div class="card notice">
   <p><strong>Protect your account:</strong> <a href="{{ url_for('Account') }}">add a passkey</a>,
     so that only you can log in.</p>

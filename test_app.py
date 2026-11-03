@@ -139,3 +139,37 @@ def test_previously_collected_thumbprints_and_maiden_names_are_erased(client):
     assert row["mothers_maiden_name"] == "" and row["thumbprint_path"] == ""
     assert not app_module.os.path.exists(old_thumb)
     assert row["address"] == "123 Main St"
+
+
+def test_sandbox_step_in_only_works_in_the_sandbox(client, monkeypatch):
+    test_client, app_module = client
+    LegacyMember(app_module, "olduser", "Old User")
+    assert test_client.post("/sandbox/as/olduser").status_code == 404
+    assert b"Try it as a pretend Member" not in test_client.get("/login").data
+
+    monkeypatch.setenv("MEETINGHOUSE_SANDBOX", "1")
+    page = test_client.get("/login").data
+    assert b"Try it as a pretend Member" in page and b"Old User" in page
+    resp = test_client.post("/sandbox/as/olduser", follow_redirects=True)
+    assert b"You are now Old User, a pretend Member" in resp.data
+    assert b"practice Meetinghouse" in resp.data
+    assert test_client.post("/sandbox/as/nobody").status_code == 404
+
+
+def test_sandbox_seed_fills_an_empty_database_only(tmp_path):
+    import sandbox
+
+    people = sandbox.Seed(str(tmp_path / "s.db"), str(tmp_path / "u"))
+    assert len(people) == 8
+    import persistence
+
+    house = persistence.LoadHouse(persistence.Connect(str(tmp_path / "s.db")))
+    titles = {t.title for t in house.topics.values()}
+    assert "Chairs for the hall" in titles and "Spring cleanup day" in titles
+    assert any(t.closed for t in house.topics.values())
+    assert any(not t.HasPoll() for t in house.topics.values())
+    try:
+        sandbox.Seed(str(tmp_path / "s.db"), str(tmp_path / "u"))
+        assert False, "should refuse a database that already has Members"
+    except SystemExit:
+        pass

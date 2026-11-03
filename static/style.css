@@ -31,7 +31,8 @@ header.site {
 }
 
 header.site .brand { font-weight: 700; font-size: 1.1rem; color: var(--accent); }
-header.site nav { display: flex; gap: 1rem; flex-wrap: wrap; }
+header.site nav { display: flex; gap: 0.85rem; flex-wrap: wrap; font-size: 0.95rem; }
+header.site .account-box { display: flex; gap: 0.75rem; align-items: center; margin-left: auto; white-space: nowrap; }
 header.site nav a { color: var(--ink); text-decoration: none; }
 header.site nav a:hover { text-decoration: underline; }
 header.site .spacer { flex: 1; }
@@ -76,7 +77,7 @@ a.button.danger, button.danger { background: var(--no); }
 form.inline { display: inline; }
 
 label { display: block; margin: 0.6rem 0 0.2rem; font-weight: 600; font-size: 0.9rem; }
-input[type=text], input[type=password], input[type=number], input[type=date], textarea, select {
+input[type=text], input[type=email], input[type=password], input[type=number], input[type=date], textarea, select {
   width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--line); border-radius: 5px;
   font-size: 1rem; font-family: inherit;
 }
@@ -119,3 +120,5 @@ fieldset.card { margin: 0.75rem 0; }
 fieldset.card legend { font-weight: 600; color: var(--accent); padding: 0 0.3rem; }
 code { font-family: "Courier New", monospace; font-size: 0.9em; word-break: break-all; }
 .member-photo { width: 96px; height: 96px; object-fit: cover; border-radius: 50%; float: right; margin-left: 1rem; }
+
+.sandbox-banner { background: #fff4d6; border-bottom: 1px solid #e8d49a; padding: 0.5rem 1rem; text-align: center; }

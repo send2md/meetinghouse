@@ -163,6 +163,8 @@ def InjectHelpers():
         return participant.name if participant else "(unknown)"
 
     return {
+        "sandbox": _Sandbox(),
+        "sandbox_members": _SandboxMembers() if _Sandbox() else [],
         "participant_name": participant_name,
         "current_participant": g.get("participant", None),
         "Subsection": Subsection,
@@ -207,7 +209,7 @@ def Dashboard():
     for topic in house.topics.values():
         if topic.closed:
             continue
-        counts = house.EffectiveVoteCounts(topic, now)
+        counts = house.EffectiveVoteCounts(topic, now) if topic.HasPoll() else None
         open_by_subsection[topic.subsection].append(
             {"topic": topic, "counts": counts, "age": now - topic.created_at, "contactors": len(house.EffectiveReaders(topic, now))}
         )
@@ -341,6 +343,39 @@ def _SafeNext():
     """A ?next= target, but only a path on this site (never another site)."""
     target = request.args.get("next") or ""
     return target if target.startswith("/") and not target.startswith("//") else None
+
+
+def _Sandbox():
+    """Whether this copy of the site is the practice sandbox (config sets MEETINGHOUSE_SANDBOX=1).
+
+    The sandbox lets any visitor step into a pretend Member's account, so
+    it must only ever run on its own database filled by sandbox.py, never
+    on the live site.
+    """
+    return os.environ.get("MEETINGHOUSE_SANDBOX") == "1"
+
+
+def _SandboxMembers():
+    rows = conn.execute("SELECT username, participant_id FROM credentials ORDER BY username").fetchall()
+    return [
+        {"username": row["username"], "name": house.participants[row["participant_id"]].name}
+        for row in rows
+        if row["participant_id"] in house.participants
+    ]
+
+
+@app.route("/sandbox/as/<username>", methods=["POST"])
+def SandboxStepIn(username):
+    """In the practice sandbox only: become one of the pretend Members."""
+    if not _Sandbox():
+        abort(404)
+    row = persistence.GetCredentialsByUsername(conn, username)
+    if row is None or row["participant_id"] not in house.participants:
+        abort(404)
+    session.clear()
+    session["participant_id"] = row["participant_id"]
+    flash(f"You are now {house.participants[row['participant_id']].name}, a pretend Member. Look around, comment and Vote.")
+    return redirect(url_for("Dashboard"))
 
 
 @app.route("/logout")

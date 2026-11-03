@@ -934,6 +934,7 @@ class Meetinghouse:
                     "subsection": topic.subsection.value,
                     "title": topic.title,
                     "age": now - topic.created_at,
+                    "has_question": topic.HasPoll(),
                     "votes": {choice.value: count for choice, count in counts.items()},
                     "dismissed": self.DismissedCount(topic, now),
                 }
