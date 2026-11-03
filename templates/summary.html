@@ -7,7 +7,7 @@
 <div class="card notice">
   <h3>{{ participant_name(d.participant_id) }} was dismissed today</h3>
   <p><a href="{{ url_for('TopicDetail', topic_id=d.topic_id) }}">Read the Jury Conversation</a>.
-    {% if d.effects %}Their votes and Contactor status came off these open Conversations, whose Seasoning Time restarted:{% else %}They weren't taking part in any open Conversation.{% endif %}</p>
+    {% if d.effects %}Their Votes and Contactor status came off these open Conversations, whose Seasoning Time restarted:{% else %}They weren't taking part in any open Conversation.{% endif %}</p>
   {% if d.effects %}
   <ul>
     {% for e in d.effects %}

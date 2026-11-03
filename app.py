@@ -523,7 +523,7 @@ def ApplyIdResult(result: idcheck.IdResult):
             member["email"],
             "Welcome to Meetinghouse",
             f"Dear {participant.name},\n\nYour ID check passed and your Meetinghouse membership is active. "
-            f"You can now take part in Conversations, comment, vote and start Conversations at {_SiteAddress()}.\n\n"
+            f"You can now take part in Conversations, comment, Vote and start Conversations at {_SiteAddress()}.\n\n"
             "Once a year we'll ask you to confirm you're still here with a quick selfie.\n\nMeetinghouse",
         )
     else:
@@ -1094,9 +1094,9 @@ def CastVote(topic_id):
         if before == 0:
             flash("Vote recorded. It counts, but it no longer keeps the Conversation open.")
         elif left == 0:
-            flash("Vote recorded. That was the last of your votes that can keep this Conversation open.")
+            flash("Vote recorded. That was the last of your Votes that can keep this Conversation open.")
         else:
-            flash(f"Vote recorded. Your votes can keep this Conversation open {left} more time{'s' if left != 1 else ''}.")
+            flash(f"Vote recorded. Your Votes can keep this Conversation open {left} more time{'s' if left != 1 else ''}.")
     except (MeetinghouseError, KeyError) as exc:
         flash(str(exc) if isinstance(exc, MeetinghouseError) else "No such Conversation.")
     return redirect(url_for("TopicDetail", topic_id=topic_id))
@@ -1141,7 +1141,7 @@ def AttachQuestion(topic_id):
             persistence.SaveTopic(conn, topic)
             FlushNewEvents(prev_len)
         flash(
-            f"Your Question is attached and you are its Pollster. Everyone can vote on it now, "
+            f"Your Question is attached and you are its Pollster. Everyone can Vote on it now, "
             f"and the Conversation stays open at least {topic.rules.min_life.days // 7} weeks."
         )
     except (MeetinghouseError, KeyError) as exc:

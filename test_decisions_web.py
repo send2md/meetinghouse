@@ -44,14 +44,14 @@ def test_asked_once_each_would_you_like_to_vote(client):
     no_question = _NewForumConversation(test_client, title="Chairs", question="")
     with_question = _NewForumConversation(test_client)  # Bob is its Pollster
     As(test_client, "janedoe", people["jane"][1])
-    assert "Would you like to vote?" in _Text(test_client.get(f"/topic/{with_question}"))
-    assert "Would you like to vote?" not in _Text(test_client.get(f"/topic/{with_question}"))  # only once
+    assert "Would you like to Vote?" in _Text(test_client.get(f"/topic/{with_question}"))
+    assert "Would you like to Vote?" not in _Text(test_client.get(f"/topic/{with_question}"))  # only once
 
-    assert "Would you like to vote?" not in _Text(test_client.get(f"/topic/{no_question}"))  # nothing to vote on yet
+    assert "Would you like to Vote?" not in _Text(test_client.get(f"/topic/{no_question}"))  # nothing to vote on yet
     As(test_client, "bob", people["bob"][1])
     test_client.post(f"/topic/{no_question}/question", data={"question": "Buy 40 chairs?"})
     As(test_client, "janedoe", people["jane"][1])
-    assert "Would you like to vote?" in _Text(test_client.get(f"/topic/{no_question}"))  # now there is
+    assert "Would you like to Vote?" in _Text(test_client.get(f"/topic/{no_question}"))  # now there is
 
     importlib.reload(app_module)  # remembered after a restart
     assert people["jane"][0] in app_module.house.topics[no_question].asked_to_vote
@@ -88,14 +88,14 @@ def test_vote_needs_a_reason_and_receipts_count_down(client):
     _Setup(test_client, app_module)
     conversation_id = _NewForumConversation(test_client)
     no_reason = test_client.post(f"/topic/{conversation_id}/vote", data={"choice": "Yes", "comment": " "}, follow_redirects=True)
-    assert "Every vote needs its reason" in _Text(no_reason)
+    assert "Every Vote needs its reason" in _Text(no_reason)
     messages = []
     for i in range(6):
         resp = test_client.post(f"/topic/{conversation_id}/vote", data={"choice": "Yes", "comment": f"reason {i}"}, follow_redirects=True)
         messages.append(_Text(resp))
     assert "can keep this Conversation open 4 more times" in messages[0]
     assert "can keep this Conversation open 1 more time." in messages[3]
-    assert "That was the last of your votes that can keep this Conversation open" in messages[4]
+    assert "That was the last of your Votes that can keep this Conversation open" in messages[4]
     assert "It counts, but it no longer keeps the Conversation open" in messages[5]
 
 

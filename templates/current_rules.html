@@ -3,8 +3,8 @@
 {% block content %}
 <h1>Current Rules</h1>
 <p>A Conversation closes once its Question has been attached for its Minimum Life and it has then gone without new
-  activity for its Seasoning Time. The Question passes if enough Contactors voted (the Threshold) and enough of the
-  votes were in favor (the Approval). A Conversation without a Question stays open for Discussion.</p>
+  activity for its Seasoning Time. The Question passes if enough Contactors Voted (the Threshold) and enough of the
+  Votes were in favor (the Approval). A Conversation without a Question stays open for Discussion.</p>
 
 <div class="card">
   <h3>Fixed for every Conversation</h3>
@@ -22,9 +22,9 @@
 </div>
 
 <div class="card">
-  <h3>Changeable by a vote in the Rules Committee</h3>
+  <h3>Changeable by a Vote in the Rules Committee</h3>
   <table>
-    <tr><th>Setting</th><th>Now</th><th>One vote can change it to</th><th>Last changed</th><th>Open Conversation</th></tr>
+    <tr><th>Setting</th><th>Now</th><th>One Vote can change it to</th><th>Last changed</th><th>Open Conversation</th></tr>
     {% for row in rows %}
     <tr>
       <td>{{ row.subsection.value }} {{ row.label }}</td>
@@ -35,9 +35,9 @@
     </tr>
     {% endfor %}
   </table>
-  <p class="muted">Each vote can move a number by at most 5% of its current value, and always by at least 1 point, in whole
+  <p class="muted">Each Vote can move a number by at most 5% of its current value, and always by at least 1 point, in whole
     percentages. Every Threshold and Approval always stays between 9% and 100%.</p>
-  <p class="muted">Contactors are the Members who have touched a Conversation: opened it, posted a Comment or voted.
-    Threshold = Voters ÷ Contactors. Approval = votes in favor ÷ all votes; in the Forum Committee, Abstain counts in favor.</p>
+  <p class="muted">Contactors are the Members who have touched a Conversation: opened it, posted a Comment or Voted.
+    Threshold = Voters ÷ Contactors. Approval = Votes in favor ÷ all Votes; in the Forum Committee, Abstain counts in favor.</p>
 </div>
 {% endblock %}

@@ -645,12 +645,12 @@ class Meetinghouse:
         first RESTART_LIMIT votes on this Topic restart its quiet clock.
         """
         if not comment or not comment.strip():
-            raise InvalidTopic("Every vote needs its reason. Please write why you're voting this way.")
+            raise InvalidTopic("Every Vote needs its reason. Please write why you're Voting this way.")
         topic = self._GetOpenTopic(topic_id)
         if not topic.HasPoll():
-            raise NoPollOnTopic("This Conversation has no Question to vote on yet.")
+            raise NoPollOnTopic("This Conversation has no Question to Vote on yet.")
         if choice not in topic.AllowedChoices():
-            raise InvalidTopic(f"Abstain isn't an option in {topic.subsection.value}: vote Yes or No.")
+            raise InvalidTopic(f"Abstain isn't an option in the {topic.subsection.value} Committee: Vote Yes or No.")
         self._RequireActive(participant_id, now)
 
         topic.readers.setdefault(participant_id, now)

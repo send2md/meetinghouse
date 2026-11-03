@@ -20,7 +20,7 @@
   <form method="post" action="{{ url_for('AttachQuestion', topic_id=topic.id) }}">
     <label><strong>Do you want to attach a Question to this Conversation?</strong></label>
     <p class="muted">There's no Question yet, so this Conversation is for Discussion only. If you attach one, you become its
-      Pollster, everyone can vote on it, and the Conversation stays open at least {{ topic.rules.min_life.days // 7 }} weeks from then.
+      Pollster, everyone can Vote on it, and the Conversation stays open at least {{ topic.rules.min_life.days // 7 }} weeks from then.
       A Conversation can have only one Question.</p>
     <input type="text" name="question" required placeholder="For example: Shall we buy 40 chairs for the hall?">
     <p><input type="submit" value="Attach this Question"></p>
@@ -32,8 +32,8 @@
 
 {% if ask_to_vote %}
 <div class="card notice">
-  <p><strong>Would you like to vote?</strong> You've opened this Conversation, so you're one of its Contactors.
-    If you don't vote, it's harder for the Question to pass. <a href="#votes">Go to the vote</a></p>
+  <p><strong>Would you like to Vote?</strong> You've opened this Conversation, so you're one of its Contactors.
+    If you don't Vote, it's harder for the Question to pass. <a href="#votes">Go to the Vote</a></p>
 </div>
 {% endif %}
 
@@ -55,7 +55,7 @@
 <div class="card notice">
   <h3>{{ participant_name(topic.target_participant_id) }} was dismissed on {{ topic.closed_at|day }}</h3>
   {% if topic.dismissal_effects %}
-    <p>Their votes and Contactor status were taken off these open Conversations, and each one's Seasoning Time restarted:</p>
+    <p>Their Votes and Contactor status were taken off these open Conversations, and each one's Seasoning Time restarted:</p>
     <ul>
     {% for e in topic.dismissal_effects %}
       <li><a href="{{ url_for('TopicDetail', topic_id=e.topic_id) }}">{{ e.title }}</a>
@@ -76,7 +76,7 @@
       {% set c = e.record %}
       <div class="comment">
         <div class="meta">
-          {{ participant_name(c.participant_id) }} · voted
+          {{ participant_name(c.participant_id) }} · Voted
           <span class="badge {{ c.choice.value|lower }}">{{ c.choice.value }}</span>
           {{ c.timestamp|fmt }}
           {% if c.revoked %}<span class="badge revoked">withdrawn</span>{% endif %}
@@ -125,7 +125,7 @@
 
   {% if can_act %}
     <form method="post" action="{{ url_for('CastVote', topic_id=topic.id) }}">
-      <label>Your vote{% if my_vote %} (currently {{ my_vote.choice.value }} — voting again replaces it){% endif %}</label>
+      <label>Your Vote{% if my_vote %} (currently {{ my_vote.choice.value }} — Voting again replaces it){% endif %}</label>
       <select name="choice" required>
         {% for choice in topic.AllowedChoices() %}
           <option value="{{ choice.value }}" {% if my_vote and my_vote.choice == choice %}selected{% endif %}>{{ choice.value }}</option>
@@ -134,11 +134,11 @@
       <label>What is your reason?</label>
       <textarea name="comment" required></textarea>
       <p><input type="submit" value="{% if my_vote %}Vote again{% else %}Vote{% endif %}">
-        <span class="muted">{% if votes_left %}Your votes can keep this Conversation open {{ votes_left }} more time{{ 's' if votes_left != 1 }}.{% else %}Your votes count, but no longer keep this Conversation open.{% endif %}</span></p>
+        <span class="muted">{% if votes_left %}Your Votes can keep this Conversation open {{ votes_left }} more time{{ 's' if votes_left != 1 }}.{% else %}Your Votes count, but no longer keep this Conversation open.{% endif %}</span></p>
     </form>
     {% if my_vote %}
     <form class="inline" method="post" action="{{ url_for('Revoke', topic_id=topic.id) }}">
-      <button class="secondary" type="submit">Withdraw my vote</button>
+      <button class="secondary" type="submit">Withdraw my Vote</button>
     </form>
     {% endif %}
   {% endif %}

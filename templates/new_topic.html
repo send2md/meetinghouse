@@ -26,7 +26,7 @@
 
     {% elif subsection.value == "Rules" %}
       <p class="muted">A Rules Conversation either changes one setting, or approves a change to the software. Its Question
-        is "Adopt this change?", and you are its Pollster. Votes are Yes or No; to keep things as they are, vote No.</p>
+        is "Adopt this change?", and you are its Pollster. Votes are Yes or No; to keep things as they are, Vote No.</p>
       <label><input type="radio" name="kind" value="setting" {% if form.get('kind', 'setting') == 'setting' %}checked{% endif %}> Change a setting</label>
       <label><input type="radio" name="kind" value="software" {% if form.get('kind') == 'software' %}checked{% endif %}> Approve a software change</label>
 
@@ -44,7 +44,7 @@
             </optgroup>
           {% endfor %}
         </select>
-        <p class="muted">Each vote can move a setting by at most 5% of its current value, and always by at least 1 point,
+        <p class="muted">Each Vote can move a setting by at most 5% of its current value, and always by at least 1 point,
           in whole percentages. Every setting stays between 9% and 100%. Minimum Life and Seasoning Time can't be changed.
           See <a href="{{ url_for('CurrentRules') }}">the current Rules</a>.</p>
       </fieldset>
@@ -68,7 +68,7 @@
       <textarea name="description">{{ form.get('description', '') }}</textarea>
       <label>Do you want to attach a Question to this Conversation?</label>
       <input type="text" name="poll_question" value="{{ form.get('poll_question', '') }}" placeholder="Leave this empty to start with Discussion only">
-      <p class="muted">If you attach a Question, you become its Pollster and everyone can vote on it. If you don't, anyone
+      <p class="muted">If you attach a Question, you become its Pollster and everyone can Vote on it. If you don't, anyone
         taking part can attach one later. A Conversation has at most one Question.</p>
     {% endif %}
     <p><input type="submit" value="Start this Conversation"></p>

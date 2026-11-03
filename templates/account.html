@@ -13,7 +13,7 @@
   {% if member['photo_path'] %}<img src="{{ url_for('MemberPhoto', participant_id=current_participant.id) }}" alt="Your photo" class="member-photo">{% endif %}
   {% if paused %}
     <p><strong>Your membership is paused</strong> because your yearly check was due on {{ renew_by|day }}.
-      You can read everything, but can't vote or comment until you renew.</p>
+      You can read everything, but can't Vote or comment until you renew.</p>
   {% elif renew_by %}
     <p>Your membership runs until <strong>{{ renew_by|day }}</strong>. Renew any time before then.</p>
   {% endif %}
