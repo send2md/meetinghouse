@@ -35,6 +35,7 @@ from webauthn.helpers.structs import (
 )
 from werkzeug.security import check_password_hash
 
+import geo
 import idcheck
 import meetinghouse
 import mailer
@@ -61,6 +62,7 @@ TICK_INTERVAL_SECONDS = int(os.environ.get("MEETINGHOUSE_TICK_SECONDS", "300"))
 
 # Members' verified photos live outside ~/html, next to the SQLite
 # file, and are served through the MemberPhoto route.
+GEO_PATH = os.environ.get("MEETINGHOUSE_GEO", os.path.join(os.path.dirname(DB_PATH), "postal.db"))
 UPLOAD_DIR = os.environ.get("MEETINGHOUSE_UPLOADS", os.path.join(os.path.dirname(DB_PATH), "uploads"))
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -1333,6 +1335,55 @@ def Archive():
     query = request.args.get("q", "").strip()
     results = house.SearchArchive(query) if query else []
     return render_template("archive.html", query=query, results=results)
+
+
+# --- The map -------------------------------------------------------------------
+
+_locator = None
+
+
+def _Locator():
+    global _locator
+    if _locator is None or (not _locator.Available() and os.path.exists(GEO_PATH)):
+        _locator = geo.Locator(GEO_PATH)
+    return _locator
+
+
+def _MapDots(now):
+    """Every Member as a rough ~5 km square with its towns and how many live
+    there; nobody's name, and nothing more exact than the square."""
+    locator = _Locator()
+    squares = {}
+    unplaced = 0
+    for participant in house.participants.values():
+        if participant.HasLeft() or participant.IsDismissed(now) or not security.IsActivated(conn, participant.id):
+            continue
+        member = security.GetMember(conn, participant.id)
+        if member is None:
+            continue
+        spot = locator.Locate(member["country"] or member["verified_country"], member["zip"], member["town"])
+        if spot is None:
+            unplaced += 1
+            continue
+        key = geo.RoughSpot(*spot)
+        square = squares.setdefault(key, {"lat": key[0], "lon": key[1], "count": 0, "towns": set()})
+        square["count"] += 1
+        if member["town"]:
+            square["towns"].add(member["town"].strip())
+    dots = [dict(d, towns=sorted(d["towns"])) for d in squares.values()]
+    return dots, unplaced
+
+
+@app.route("/map")
+def MemberMap():
+    """Where Members live, roughly. Public."""
+    now = Now()
+    available = _Locator().Available()
+    dots, unplaced = _MapDots(now) if available else ([], 0)
+    return render_template(
+        "map.html", dots=dots, unplaced=unplaced, available=available,
+        members=sum(d["count"] for d in dots) + unplaced,
+    )
 
 
 # --- The public log ------------------------------------------------------------

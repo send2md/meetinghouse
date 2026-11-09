@@ -48,3 +48,7 @@ os.environ["MEETINGHOUSE_SMTP_PORT"] = "587"
 os.environ["MEETINGHOUSE_SMTP_USER"] = ""
 os.environ["MEETINGHOUSE_SMTP_PASSWORD"] = ""
 os.environ["MEETINGHOUSE_MAIL_FROM"] = "Meetinghouse <hello@meetinghouse.ai>"
+
+# Where the map's postal-code list is (built by "python3 geo.py build"; the deploy does it).
+# Defaults to postal.db next to the database.
+# os.environ["MEETINGHOUSE_GEO"] = "/home/USERNAME/meetinghouse/data/postal.db"

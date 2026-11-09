@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Map — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Where Members live</h1>
+<p>Each square is an area about 5 km across, with the towns Members there gave and how many live there. Nobody's street address is stored, and names aren't shown on the map.</p>
+{% if not available %}
+  <div class="card"><p class="muted">The map isn't ready yet: the list of where postal codes are hasn't been loaded on this server.</p></div>
+{% elif not dots %}
+  <div class="card"><p class="muted">No Members to show yet.</p></div>
+{% else %}
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <div id="member-map" class="member-map" role="img" aria-label="Map of roughly where Members live"></div>
+  <p class="muted">{{ members }} Member{{ "s" if members != 1 }}{% if unplaced %}; {{ unplaced }} couldn't be placed from their postal code and town{% endif %}. Postal code locations from <a href="https://www.geonames.org/">GeoNames</a> (CC BY 4.0).</p>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script>
+    (function () {
+      var dots = {{ dots|tojson }};
+      var map = L.map("member-map", { scrollWheelZoom: false });
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 12,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+      var bounds = [];
+      dots.forEach(function (d) {
+        var half = 0.0225, halfLon = 0.0225 / Math.max(Math.cos(d.lat * Math.PI / 180), 0.05);
+        var square = [[d.lat - half, d.lon - halfLon], [d.lat + half, d.lon + halfLon]];
+        var label = d.count + " Member" + (d.count === 1 ? "" : "s") + (d.towns.length ? " · " + d.towns.join(", ") : "");
+        L.rectangle(square, { color: "#7a5a2e", weight: 1, fillColor: "#7a5a2e", fillOpacity: 0.35 })
+          .bindTooltip(label).addTo(map);
+        bounds.push(square[0], square[1]);
+      });
+      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 10 });
+    })();
+  </script>
+  <table class="log">
+    <tr><th>Towns</th><th>Members</th></tr>
+    {% for d in dots|sort(attribute="count", reverse=True) %}
+    <tr><td>{{ d.towns|join(", ") or "—" }}</td><td>{{ d.count }}</td></tr>
+    {% endfor %}
+  </table>
+{% endif %}
+{% endblock %}
