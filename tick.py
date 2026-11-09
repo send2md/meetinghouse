@@ -32,6 +32,7 @@ def main():
     conn = persistence.Connect(DB_PATH)
     house = persistence.LoadHouse(conn)
     now = UtcNow()
+    persistence.NoteCodeVersion(conn, tick_runner.CodeVersion(), now)
     closed = tick_runner.RunTick(house, conn, now)
     import security
 

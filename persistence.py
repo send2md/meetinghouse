@@ -124,8 +124,57 @@ def Connect(path):
     for column, kind in _TOPIC_COLUMNS_ADDED.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE topics ADD COLUMN {column} {kind}")
+    log_columns = {row["name"] for row in conn.execute("PRAGMA table_info(event_log)")}
+    for column in ("prev_hash", "hash"):
+        if column not in log_columns:
+            conn.execute(f"ALTER TABLE event_log ADD COLUMN {column} TEXT")
     conn.commit()
+    _ChainUnhashedEntries(conn)
     return conn
+
+
+# --- The public log ------------------------------------------------------------------
+#
+# Every entry carries the fingerprint (SHA-256) of the entry before it plus its
+# own words, so each entry's fingerprint depends on everything logged before it.
+# Change, add or remove any earlier entry and every later fingerprint changes.
+# Anyone who saved a day's fingerprint can later check that the log still leads
+# to it. The rule is simple enough to check by hand with any SHA-256 tool:
+#
+#     hash = sha256(prev_hash + "\n" + kind + "\n" + at + "\n" + data)
+#
+# where data is the entry's JSON exactly as stored, and the first entry's
+# prev_hash is GENESIS.
+
+GENESIS = "0" * 64
+
+import threading
+
+_LOG_LOCK = threading.Lock()  # one writer at a time within this process
+
+
+def EntryHash(prev_hash, kind, at, data_json):
+    import hashlib
+
+    return hashlib.sha256(f"{prev_hash}\n{kind}\n{at}\n{data_json}".encode("utf-8")).hexdigest()
+
+
+def _LastHash(conn):
+    row = conn.execute("SELECT hash FROM event_log WHERE hash IS NOT NULL ORDER BY seq DESC LIMIT 1").fetchone()
+    return row["hash"] if row else GENESIS
+
+
+def _ChainUnhashedEntries(conn):
+    """Give fingerprints to entries written before the log had them, in order."""
+    rows = conn.execute("SELECT seq, kind, at, data_json FROM event_log WHERE hash IS NULL ORDER BY seq").fetchall()
+    if not rows:
+        return
+    prev = _LastHash(conn)
+    for row in rows:
+        digest = EntryHash(prev, row["kind"], row["at"], row["data_json"])
+        conn.execute("UPDATE event_log SET prev_hash = ?, hash = ? WHERE seq = ?", (prev, digest, row["seq"]))
+        prev = digest
+    conn.commit()
 
 
 def _Iso(value):
@@ -400,15 +449,91 @@ def SaveRules(conn, subsection: Subsection, rule: RuleConfig):
 
 
 def LogEvent(conn, entry: dict):
-    """Append one Meetinghouse event_log entry to the durable archive."""
+    """Append one entry to the public log, chained to the entry before it."""
     entry = dict(entry)
     kind = entry.pop("kind")
-    at = entry.pop("at")
-    conn.execute(
-        "INSERT INTO event_log (kind, at, data_json) VALUES (?, ?, ?)",
-        (kind, _Iso(at), json.dumps(entry, default=str)),
-    )
-    conn.commit()
+    at = _Iso(entry.pop("at"))
+    data_json = json.dumps(entry, default=str, sort_keys=True, separators=(",", ":"))
+    with _LOG_LOCK:
+        conn.commit()
+        # The web site and the cron job both write here; take the database's
+        # write lock before reading the last fingerprint, so two entries never
+        # chain to the same one.
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            prev = _LastHash(conn)
+            conn.execute(
+                "INSERT INTO event_log (kind, at, data_json, prev_hash, hash) VALUES (?, ?, ?, ?, ?)",
+                (kind, at, data_json, prev, EntryHash(prev, kind, at, data_json)),
+            )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+
+
+def ReadLog(conn, before=None, limit=100):
+    """Log entries, newest first: dicts with seq, kind, at, data, prev_hash, hash."""
+    if before is None:
+        rows = conn.execute("SELECT * FROM event_log ORDER BY seq DESC LIMIT ?", (limit,))
+    else:
+        rows = conn.execute("SELECT * FROM event_log WHERE seq < ? ORDER BY seq DESC LIMIT ?", (before, limit))
+    return [_LogRow(row) for row in rows]
+
+
+def AllLogEntries(conn):
+    """Every log entry, oldest first, exactly as stored (for checking the chain)."""
+    return [_LogRow(row) for row in conn.execute("SELECT * FROM event_log ORDER BY seq")]
+
+
+def _LogRow(row):
+    return {
+        "seq": row["seq"],
+        "kind": row["kind"],
+        "at": row["at"],
+        "data_json": row["data_json"],
+        "data": json.loads(row["data_json"]),
+        "prev_hash": row["prev_hash"],
+        "hash": row["hash"],
+    }
+
+
+def LogEntriesOfKind(conn, kind):
+    return [_LogRow(row) for row in conn.execute("SELECT * FROM event_log WHERE kind = ? ORDER BY seq", (kind,))]
+
+
+def CheckLog(conn):
+    """Recompute every fingerprint. Returns (entries checked, seq of the first bad entry or None)."""
+    prev = GENESIS
+    count = 0
+    for row in conn.execute("SELECT seq, kind, at, data_json, prev_hash, hash FROM event_log ORDER BY seq"):
+        if row["prev_hash"] != prev or row["hash"] != EntryHash(prev, row["kind"], row["at"], row["data_json"]):
+            return count, row["seq"]
+        prev = row["hash"]
+        count += 1
+    return count, None
+
+
+def Fingerprint(conn, before):
+    """The log's fingerprint as it stood at `before`: the hash of the last entry
+    logged earlier, with how many entries that covers."""
+    row = conn.execute(
+        "SELECT seq, hash FROM event_log WHERE at < ? ORDER BY seq DESC LIMIT 1", (_Iso(before),)
+    ).fetchone()
+    if row is None:
+        return {"hash": GENESIS, "entries": 0}
+    count = conn.execute("SELECT COUNT(*) FROM event_log WHERE seq <= ?", (row["seq"],)).fetchone()[0]
+    return {"hash": row["hash"], "entries": count}
+
+
+def NoteCodeVersion(conn, version, now):
+    """Log which version of the code is running, whenever it changes."""
+    if not version:
+        return
+    row = conn.execute("SELECT data_json FROM event_log WHERE kind = 'code_version' ORDER BY seq DESC LIMIT 1").fetchone()
+    if row and json.loads(row["data_json"]).get("version") == version:
+        return
+    LogEvent(conn, {"kind": "code_version", "at": now, "version": version})
 
 
 def LastRuleChanges(conn):

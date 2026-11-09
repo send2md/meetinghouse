@@ -160,3 +160,10 @@ code { font-family: "Courier New", monospace; font-size: 0.9em; word-break: brea
 .about-art p { font-style: italic; line-height: 1.6; }
 .about-art p.signature { text-align: right; font-style: normal; clear: both; }
 @media (max-width: 600px) { .about-art img { float: none; width: 100%; margin: 0 0 1rem; } }
+
+.fingerprint .hash { font-family: ui-monospace, Menlo, monospace; word-break: break-all; font-size: 0.95rem; background: #f3efe8; padding: 0.5rem; border-radius: 6px; }
+.fingerprint .ok { color: #2f6b2f; }
+.fingerprint .error { color: #a12a2a; }
+table.log { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+table.log th, table.log td { border-bottom: 1px solid #e3ddd3; padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
+table.log td.when { white-space: nowrap; }

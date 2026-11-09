@@ -73,4 +73,34 @@ def RunTick(house, conn, now):
             persistence.SaveParticipant(conn, participant)
     for entry in house.event_log[prev_len:]:
         persistence.LogEvent(conn, entry)
+    LogMembershipChanges(house, conn, now)
     return closed
+
+
+def LogMembershipChanges(house, conn, now):
+    """Put in the public log the changes that happen by the calendar alone:
+    a Member pausing when their yearly check lapses, and a dismissed Member
+    coming back when their Dismissal ends. Each is logged once."""
+    paused = {(e["data"].get("participant_id"), e["data"].get("due")) for e in persistence.LogEntriesOfKind(conn, "member_paused")}
+    returned = {(e["data"].get("participant_id"), e["data"].get("jury_topic_id")) for e in persistence.LogEntriesOfKind(conn, "member_returned")}
+    for participant in house.participants.values():
+        latest = participant.LatestFormDate()
+        if latest is not None and not participant.HasCurrentForm(now):
+            due = (latest + dt.timedelta(days=365)).isoformat()
+            if (participant.id, due) not in paused:
+                persistence.LogEvent(conn, {"kind": "member_paused", "at": now, "participant_id": participant.id, "due": due})
+        for dismissal in participant.dismissals:
+            if dismissal.end <= now and (participant.id, dismissal.topic_id) not in returned:
+                persistence.LogEvent(
+                    conn,
+                    {"kind": "member_returned", "at": now, "participant_id": participant.id, "jury_topic_id": dismissal.topic_id},
+                )
+
+
+def CodeVersion():
+    """The version of the code running here, from the VERSION file the deploy writes."""
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as f:
+            return f.read().strip()
+    except OSError:
+        return ""

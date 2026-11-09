@@ -10,6 +10,7 @@ it real time and real people, and keeps SQLite in sync.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import re
 import secrets
@@ -77,6 +78,7 @@ app.config["SESSION_COOKIE_SECURE"] = os.environ.get("MEETINGHOUSE_SECURE_COOKIE
 LOCK = threading.Lock()
 conn = persistence.Connect(DB_PATH)
 house = persistence.LoadHouse(conn)
+persistence.NoteCodeVersion(conn, tick_runner.CodeVersion(), meetinghouse.UtcNow())
 
 
 def Now():
@@ -590,6 +592,7 @@ def ApplyIdResult(result: idcheck.IdResult):
     member = security.GetMember(conn, participant.id)
     if row["purpose"] == idcheck.JOIN:
         _Activate(participant)
+        persistence.LogEvent(conn, {"kind": "member_joined", "at": now, "participant_id": participant.id})
         mailer.Send(
             member["email"],
             "Welcome to Meetinghouse",
@@ -602,6 +605,7 @@ def ApplyIdResult(result: idcheck.IdResult):
             participant.SignForm(signed_date=now.date())
             persistence.SaveParticipant(conn, participant)
         security.UpdateMember(conn, participant.id, reminders_sent="")
+        persistence.LogEvent(conn, {"kind": "member_renewed", "at": now, "participant_id": participant.id})
     return security.GetIdSession(conn, result.session_id)
 
 
@@ -768,6 +772,7 @@ def LoginCode():
         flash(reason)
         return redirect(url_for("Login"))
     security.RemoveAllPasskeys(conn, participant.id)  # the lost device must not work any more
+    persistence.LogEvent(conn, {"kind": "login_recovered", "at": Now(), "participant_id": participant.id})
     _CompleteLogin(participant, username)
     flash("You're back in. Your old passkeys were removed: add a passkey on this device now so you can log in next time.")
     return redirect(url_for("Account"))
@@ -1285,13 +1290,124 @@ def Archive():
     return render_template("archive.html", query=query, results=results)
 
 
+# --- The public log ------------------------------------------------------------
+
+_SETTING_NAMES = {"voter_fraction": "Threshold", "approval_fraction": "Approval"}
+
+
+def _LogWho(participant_id, now):
+    """A Member's name for the log, unless they are away on a Dismissal (their
+    entries stay in the log, but their name is hidden while they are away)."""
+    participant = house.participants.get(participant_id)
+    if participant is None:
+        return "(unknown)"
+    if participant.IsDismissed(now):
+        return "a Member who is away"
+    return participant.name
+
+
+def _DescribeLogEntry(entry, now):
+    """One log entry in plain words, and the Conversation it is about (if any)."""
+    d = entry["data"]
+    kind = entry["kind"]
+    topic = house.topics.get(d.get("topic_id")) if d.get("topic_id") else None
+    title = f"“{topic.title}”" if topic else "a Conversation"
+    who = _LogWho(d.get("participant_id") or d.get("author_id"), now) if (d.get("participant_id") or d.get("author_id")) else ""
+    if kind == "topic_created":
+        text = f"{who} started {title}"
+    elif kind == "question_attached":
+        text = f"{who} attached a Question to {title}"
+    elif kind == "vote_cast":
+        text = f"{who} Voted {d.get('choice')} in {title}"
+    elif kind == "vote_revoked":
+        text = f"{who} withdrew their Vote in {title}"
+    elif kind == "post_added":
+        text = f"{who} commented in {title}"
+    elif kind == "topic_closed":
+        text = f"{title} closed: {d.get('result')}"
+    elif kind == "rule_changed":
+        setting = _SETTING_NAMES.get(d.get("setting"), d.get("setting"))
+        old, new = d.get("old"), d.get("new")
+        text = f"The {d.get('target_subsection')} {setting} changed from {_Pct(old)} to {_Pct(new)}"
+    elif kind == "rule_change_rejected":
+        text = f"A passed Rules change could not be made: {d.get('reason')}"
+    elif kind == "software_change_approved":
+        text = f"Software version {d.get('ref')} was approved"
+    elif kind == "participant_dismissed":
+        text = f"{who} was dismissed by the Jury for {d.get('duration_days')} days"
+    elif kind == "member_returned":
+        text = f"{who} came back at the end of their Dismissal"
+    elif kind == "member_joined":
+        text = f"{who} joined"
+    elif kind == "member_renewed":
+        text = f"{who} did their yearly check"
+    elif kind == "member_paused":
+        text = f"{who} was paused: their yearly check lapsed"
+    elif kind == "login_recovered":
+        text = f"{who} recovered their login by email"
+    elif kind == "code_version":
+        text = f"The site started running code version {d.get('version')}"
+    else:
+        text = kind.replace("_", " ")
+    return text, topic
+
+
+def _Pct(value):
+    try:
+        return f"{float(value) * 100:g}%"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _TodaysFingerprint(now):
+    """The log's fingerprint as of midnight UTC this morning."""
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return dict(persistence.Fingerprint(conn, midnight), date=midnight.date())
+
+
+@app.route("/log")
+def PublicLog():
+    """Everything the software has done, newest first. Public."""
+    now = Now()
+    before = request.args.get("before", type=int)
+    entries = persistence.ReadLog(conn, before=before, limit=100)
+    rows = []
+    for entry in entries:
+        text, topic = _DescribeLogEntry(entry, now)
+        rows.append({"entry": entry, "text": text, "topic": topic, "at": dt.datetime.fromisoformat(entry["at"])})
+    checked, broken_at = persistence.CheckLog(conn)
+    return render_template(
+        "log.html",
+        rows=rows,
+        older=entries[-1]["seq"] if len(entries) == 100 else None,
+        fingerprint=_TodaysFingerprint(now),
+        checked=checked,
+        broken_at=broken_at,
+        version=tick_runner.CodeVersion(),
+    )
+
+
+@app.route("/log/download")
+def PublicLogDownload():
+    """The whole log as stored, so anyone can recompute every fingerprint."""
+    body = "\n".join(
+        json.dumps({k: e[k] for k in ("seq", "kind", "at", "data_json", "prev_hash", "hash")}, ensure_ascii=False)
+        for e in persistence.AllLogEntries(conn)
+    )
+    return app.response_class(
+        body + "\n",
+        mimetype="application/x-ndjson",
+        headers={"Content-Disposition": "attachment; filename=meetinghouse-log.jsonl"},
+    )
+
+
 @app.route("/summary")
 def Summary():
     guard = RequireLogin()
     if guard:
         return guard
     summary = house.DailySummary(g.participant.id, Now())
-    return render_template("summary.html", summary=summary)
+    return render_template("summary.html", summary=summary, fingerprint=_TodaysFingerprint(Now()))
 
 
 @app.route("/admin/login", methods=["GET", "POST"])

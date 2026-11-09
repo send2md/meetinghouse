@@ -24,6 +24,7 @@
       <a href="{{ url_for('Summary') }}" class="{{ 'active' if ep == 'Summary' }}">Daily Summary</a>
       {% endif %}
       <a href="{{ url_for('CurrentRules') }}" class="{{ 'active' if ep == 'CurrentRules' }}">Current Rules</a>
+      <a href="{{ url_for('PublicLog') }}" class="{{ 'active' if ep == 'PublicLog' }}">Log</a>
       {% if current_participant %}
       <a href="{{ url_for('Account') }}" class="{{ 'active' if ep == 'Account' }}">Account</a>
       {% endif %}

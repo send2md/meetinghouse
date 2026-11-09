@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Public Log — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Public Log</h1>
+<p>Everything the Meetinghouse software does is written here, newest first: Members joining, pausing and coming back, Conversations, Questions, Comments and Votes, Conversations closing and their results, Rules changes, Dismissals, login recoveries, and which version of the code is running. Nothing is ever taken out.</p>
+
+<div class="card fingerprint">
+  <h3>Today's fingerprint</h3>
+  <p class="hash">{{ fingerprint.hash }}</p>
+  <p class="muted">The log as it stood at midnight UTC on {{ fingerprint.date|day }}, covering its first {{ fingerprint.entries }} {{ "entry" if fingerprint.entries == 1 else "entries" }}. The Daily Summary shows it too.</p>
+  <p>Each entry's fingerprint is worked out from the entry before it and its own words, so it depends on everything logged before it. If anyone changed, added or removed an earlier entry, every later fingerprint would change. Save today's fingerprint, and anyone can prove later whether the log was altered before this morning.</p>
+  {% if broken_at %}
+  <p class="error"><strong>The log does not check out:</strong> entry {{ broken_at }} doesn't match the entries before it. Everything from there on is in doubt.</p>
+  {% else %}
+  <p class="ok">Checked just now: all {{ checked }} entries match.</p>
+  {% endif %}
+  <p class="muted">To check it yourself, <a href="{{ url_for('PublicLogDownload') }}">download the whole log</a>. For each entry, the fingerprint is SHA-256 of: the previous entry's fingerprint (64 zeros for the first), a new line, the kind, a new line, the time, a new line, and the data exactly as given. {% if version %}The code running now is version <a href="https://github.com/send2md/meetinghouse/commit/{{ version.split('-')[0] }}"><code>{{ version[:12] }}</code></a>.{% endif %}</p>
+</div>
+
+<table class="log">
+  <tr><th>#</th><th>When (UTC)</th><th>What happened</th><th>Fingerprint</th></tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.entry.seq }}</td>
+    <td class="when">{{ row.at|day }} {{ "%02d:%02d"|format(row.at.hour, row.at.minute) }}</td>
+    <td>{% if row.topic %}<a href="{{ url_for('TopicDetail', topic_id=row.topic.id) }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}</td>
+    <td><code title="{{ row.entry.hash }}">{{ row.entry.hash[:10] }}</code></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">Nothing has happened yet.</td></tr>
+  {% endfor %}
+</table>
+{% if older %}<p><a href="{{ url_for('PublicLog', before=older) }}">Older entries →</a></p>{% endif %}
+{% endblock %}

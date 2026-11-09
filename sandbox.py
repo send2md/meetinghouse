@@ -22,7 +22,6 @@ import zlib
 
 import persistence
 import security
-import tick_runner
 from meetinghouse import RuleChange, Subsection, UtcNow, VoteChoice
 
 MEMBERS = [
@@ -65,6 +64,7 @@ def Seed(db_path, upload_dir, now=None):
         return now - dt.timedelta(days=days, hours=hours)
 
     people = {}
+    joins = []
     for username, name, town, zip_code, color in MEMBERS:
         joined = Ago(120)
         person = house.RegisterParticipant(name)
@@ -83,6 +83,7 @@ def Seed(db_path, upload_dir, now=None):
             verified_at=joined, verified_country="United States", verified_ref="sandbox",
         )
         people[username] = person.id
+        joins.append({"kind": "member_joined", "at": joined, "participant_id": person.id})
 
     def Comment(topic, who, text, when):
         house.AddPost(topic.id, people[who], text, when)
@@ -109,7 +110,7 @@ def Seed(db_path, upload_dir, now=None):
     Vote(bags, "thomas", abstain, "I'm not sure it will change much, but I won't stand in the way.", Ago(66))
     Vote(bags, "ruth", yes, "Small changes add up.", Ago(65))
     Look(bags, "elijah", Ago(65))
-    tick_runner.RunTick(house, conn, Ago(30))
+    house.Tick(Ago(30))  # closes it; saved and logged with everything else below
 
     # 2. Open, with a Question attached later by someone else: daylight saving time.
     clocks = house.CreateTopic(
@@ -163,7 +164,7 @@ def Seed(db_path, upload_dir, now=None):
 
     for topic in house.topics.values():
         persistence.SaveTopic(conn, topic)
-    for entry in house.event_log:
+    for entry in sorted(joins + house.event_log, key=lambda e: e["at"]):
         persistence.LogEvent(conn, entry)
     return people
 

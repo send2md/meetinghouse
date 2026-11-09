@@ -3,6 +3,12 @@
 {% block content %}
 <h1>Daily Summary — {{ summary.date }}</h1>
 
+<div class="card fingerprint">
+  <h3>Today's log fingerprint</h3>
+  <p class="hash">{{ fingerprint.hash }}</p>
+  <p class="muted">Save this if you like. It lets anyone prove later whether the <a href="{{ url_for('PublicLog') }}">public log</a> was changed before this morning.</p>
+</div>
+
 {% for d in summary.dismissals_today %}
 <div class="card notice">
   <h3>{{ participant_name(d.participant_id) }} was dismissed today</h3>
