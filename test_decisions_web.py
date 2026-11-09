@@ -246,3 +246,37 @@ def test_jury_list_leaves_out_yourself_and_is_alphabetical(client):
     options = form[form.index('name="target_participant_id"'):form.index("</select>")]
     assert "Bob Roe" not in options
     assert options.index("Cy Adams") < options.index("Jane Doe") < options.index("Al Zimmer")
+
+
+def test_a_dismissed_member_is_gone_for_the_duration(client, monkeypatch):
+    test_client, app_module = client
+    people = _Setup(test_client, app_module)
+    forum_id = _NewForumConversation(test_client)  # by Bob
+    As(test_client, "janedoe", people["jane"][1])
+    test_client.post(f"/topic/{forum_id}/post", data={"text": "A word from Jane."})
+    test_client.post(f"/topic/{forum_id}/vote", data={"choice": "No", "comment": "Jane's reason."})
+    As(test_client, "bob", people["bob"][1])
+    jury = test_client.post("/topic/new/jury", data={"target_participant_id": people["jane"][0]})
+    jury_id = jury.headers["Location"].rsplit("/", 1)[-1]
+    test_client.post(f"/topic/{jury_id}/vote", data={"choice": "Yes", "comment": "Repeated cussing."})
+    start = app_module.Now()
+    monkeypatch.setattr(app_module, "Now", lambda: start + dt.timedelta(weeks=6))
+    app_module.RunTick()
+
+    page = _Text(test_client.get(f"/topic/{forum_id}"))
+    assert "A word from Jane." not in page and "Jane's reason." not in page  # gone while away
+    assert "Jane Doe's No vote removed" in page  # but the Jury's decision is on the record
+    jury_form = _Text(test_client.get("/topic/new/jury"))
+    assert "Jane Doe" not in jury_form[jury_form.index('name="target_participant_id"'):]
+
+    test_client.get("/logout")
+    resp = test_client.post("/login", data={"username": "janedoe"})
+    options = test_client.post("/login/passkey/options", json={}).get_json()
+    refused = test_client.post("/login/passkey/verify", json={"credential": people["jane"][1].get(options)})
+    assert refused.status_code == 403 and "dismissed until" in refused.get_json()["error"]
+
+    later = start + dt.timedelta(weeks=6, days=15)  # the 2-week Dismissal is over
+    monkeypatch.setattr(app_module, "Now", lambda: later)
+    As(test_client, "janedoe", people["jane"][1])
+    page = _Text(test_client.get(f"/topic/{forum_id}"))
+    assert "A word from Jane." in page

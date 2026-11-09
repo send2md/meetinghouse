@@ -179,6 +179,9 @@ def LoadCurrentParticipant():
     participant_id = session.get("participant_id")
     if participant_id and participant_id in house.participants:
         g.participant = house.participants[participant_id]
+        if g.participant.IsDismissed(Now()):  # dismissed while logged in: gone at once
+            session.pop("participant_id", None)
+            g.participant = None
 
 
 def RequireLogin():
@@ -295,10 +298,15 @@ def _LoginBlockedReason(participant):
 
     People still joining, and members whose yearly check has lapsed
     (paused), CAN log in: they need to, to finish joining or renew.
-    They just can't vote, post or start Topics until then.
+    They just can't Vote, comment or start Conversations until then.
+    A dismissed Member is gone for the duration: no login at all.
     """
     if participant is None:
         return "That account no longer exists."
+    dismissal = participant.CurrentDismissal(Now())
+    if dismissal is not None:
+        end = dismissal.end
+        return f"This account is dismissed until {end:%B} {end.day}, {end.year}. It can be used again from then."
     return None
 
 
@@ -1032,13 +1040,19 @@ def NewTopic(name):
     return Form()
 
 
+def _Away(participant_id, now):
+    """A dismissed Member is gone for the duration: their Comments and Votes are hidden until they return."""
+    person = house.participants.get(participant_id)
+    return person is not None and person.IsDismissed(now)
+
+
 def _JuryChoices():
     """Who a Jury Conversation can be about: other current Members, by last name."""
     now = Now()
     people = [
         p
         for p in house.participants.values()
-        if p.id != g.participant.id and p.IsParticipant(now) and security.IsActivated(conn, p.id)
+        if p.id != g.participant.id and p.IsActive(now) and security.IsActivated(conn, p.id)
     ]
     return sorted(people, key=lambda p: (p.name.split()[-1].lower() if p.name.split() else "", p.name.lower()))
 
@@ -1106,9 +1120,11 @@ def TopicDetail(topic_id):
     entries = []
     for history in topic.votes.values():
         for record in history:
-            entries.append({"kind": "vote", "at": record.timestamp, "record": record})
+            if not _Away(record.participant_id, now):
+                entries.append({"kind": "vote", "at": record.timestamp, "record": record})
     for post in topic.posts:
-        entries.append({"kind": "post", "at": post.timestamp, "post": post})
+        if not _Away(post.participant_id, now):
+            entries.append({"kind": "post", "at": post.timestamp, "post": post})
     entries.sort(key=lambda e: e["at"])
 
     my_vote = topic.CurrentVote(member.id) if topic.HasPoll() and member else None
