@@ -79,7 +79,7 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("MEETINGHOUSE_SECURE_COOKIES") == "1"
 
-LOCK = threading.Lock()
+LOCK = threading.RLock()  # re-entrant: an ID-check result is applied under it and takes it again
 conn = persistence.Connect(DB_PATH)
 house = persistence.LoadHouse(conn)
 persistence.NoteCodeVersion(conn, tick_runner.CodeVersion(), meetinghouse.UtcNow())
@@ -166,10 +166,16 @@ def FormatDateTime(value):
 @app.context_processor
 def InjectHelpers():
     def participant_name(participant_id):
+        if participant_id == meetinghouse.MEETINGHOUSE_ID:
+            return "Meetinghouse (the site)"
         participant = house.participants.get(participant_id)
         return participant.name if participant else "(unknown)"
 
+    def house_participant(participant_id):
+        return house.participants.get(participant_id)
+
     return {
+        "house_participant": house_participant,
         "sandbox": _Sandbox(),
         "sandbox_members": _SandboxMembers() if _Sandbox() else [],
         "participant_name": participant_name,
@@ -334,14 +340,6 @@ def _CompleteLogin(participant, username):
         flash("This is your first login.")
     else:
         flash(f"You last logged in on {previous:%B} {previous.day}, {previous.year} at {previous:%H:%M} UTC. If that wasn't you, use account recovery.")
-
-
-def _Activate(participant):
-    """Joining counts as signing the participation form for a year."""
-    with LOCK:
-        security.MarkActivated(conn, participant.id, Now())
-        participant.SignForm(signed_date=Now().date())
-        persistence.SaveParticipant(conn, participant)
 
 
 @app.route("/login/password", methods=["GET", "POST"])
@@ -519,6 +517,7 @@ def Join():
     latest = security.LatestIdSession(conn, g.participant.id, idcheck.JOIN)
     return render_template(
         "join.html",
+        review=security.GetFaceReview(conn, g.participant.id),
         has_passkey=security.HasPasskeys(conn, g.participant.id),
         latest=latest,
         providers=idcheck.GetProviders(),
@@ -593,22 +592,14 @@ def ApplyIdResult(result: idcheck.IdResult):
             f.write(result.selfie)
         security.UpdateMember(conn, participant.id, photo_path=path)
         face_print = _FacePrinter().Print(result.selfie)
-        if face_print is not None:
-            security.SetFacePrint(conn, participant.id, facecheck.Encode(face_print))
+        security.SetFacePrint(conn, participant.id, facecheck.Encode(face_print) if face_print else "")
     security.UpdateMember(
         conn, participant.id, verified_at=now, verified_country=result.country, verified_ref=result.reference
     )
-    member = security.GetMember(conn, participant.id)
-    if row["purpose"] == idcheck.JOIN:
-        _Activate(participant)
-        persistence.LogEvent(conn, {"kind": "member_joined", "at": now, "participant_id": participant.id})
-        mailer.Send(
-            member["email"],
-            "Welcome to Meetinghouse",
-            f"Dear {participant.name},\n\nYour ID check passed and your Meetinghouse membership is active. "
-            f"You can now take part in Conversations, comment, Vote and start Conversations at {_SiteAddress()}.\n\n"
-            "Once a year we'll ask you to confirm you're still here with a quick selfie.\n\nMeetinghouse",
-        )
+    if row["purpose"] in (idcheck.JOIN, idcheck.RETAKE):
+        if not security.IsActivated(conn, participant.id):
+            with LOCK:
+                _CheckFaceThenAdmit(participant, row["purpose"], now)
     else:
         with LOCK:
             participant.SignForm(signed_date=now.date())
@@ -616,6 +607,45 @@ def ApplyIdResult(result: idcheck.IdResult):
         security.UpdateMember(conn, participant.id, reminders_sent="")
         persistence.LogEvent(conn, {"kind": "member_renewed", "at": now, "participant_id": participant.id})
     return security.GetIdSession(conn, result.session_id)
+
+
+def _CheckFaceThenAdmit(participant, purpose, now):
+    """Compare the newcomer's face print with everyone's (see the design's
+    "When a face matches"). No match: they're in. A match after joining:
+    ask for a new selfie. Still a match after that: the Jury decides."""
+    prints = security.FacePrints(conn)
+    own = facecheck.Decode(prints.pop(participant.id, ""))
+    others = {pid: facecheck.Decode(p) for pid, p in prints.items() if pid in house.participants}
+    matches = facecheck.Matches(own, others) if own else []
+    if not matches:
+        if security.GetFaceReview(conn, participant.id) is not None:
+            review = security.GetFaceReview(conn, participant.id)
+            security.SetFaceReview(conn, participant.id, review["matched_id"], 0.0, "admitted", now)
+        tick_runner.AdmitMember(house, conn, participant, now, extra="Your ID check passed. ")
+        return
+    match_id, similarity = matches[0]
+    if purpose == idcheck.JOIN:
+        security.SetFaceReview(conn, participant.id, match_id, similarity, "retake", now)
+        persistence.LogEvent(conn, {"kind": "face_match_retake", "at": now, "participant_id": participant.id})
+        return
+    prev_len = len(house.event_log)
+    topic = house.CreateSamePersonCheck(participant.id, match_id, now)
+    persistence.SaveTopic(conn, topic)
+    FlushNewEvents(prev_len)
+    security.SetFaceReview(conn, participant.id, match_id, similarity, "jury", now, topic.id)
+
+
+@app.route("/join/retake", methods=["POST"])
+def RetakeSelfie():
+    """A new live selfie after a face match."""
+    guard = RequireLogin()
+    if guard:
+        return guard
+    review = security.GetFaceReview(conn, g.participant.id)
+    if review is None or review["stage"] != "retake" or security.IsActivated(conn, g.participant.id):
+        return redirect(url_for("Join"))
+    target = _StartIdCheck(idcheck.RETAKE)
+    return redirect(target or url_for("Join"))
 
 
 @app.route("/idcheck/practice/<session_id>", methods=["GET", "POST"])
@@ -661,7 +691,12 @@ def IdCheckReturn(session_id):
         if result is not None:
             with LOCK:
                 row = ApplyIdResult(result)
-    return render_template("idcheck_return.html", row=row)
+    return render_template(
+        "idcheck_return.html",
+        row=row,
+        activated=security.IsActivated(conn, row["participant_id"]),
+        review=security.GetFaceReview(conn, row["participant_id"]),
+    )
 
 
 @app.route("/idcheck/didit/webhook", methods=["POST"])
@@ -1413,6 +1448,8 @@ _SETTING_NAMES = {"voter_fraction": "Threshold", "approval_fraction": "Approval"
 def _LogWho(participant_id, now):
     """A Member's name for the log, unless they are away on a Dismissal (their
     entries stay in the log, but their name is hidden while they are away)."""
+    if participant_id == meetinghouse.MEETINGHOUSE_ID:
+        return "Meetinghouse"
     participant = house.participants.get(participant_id)
     if participant is None:
         return "(unknown)"
@@ -1452,6 +1489,10 @@ def _DescribeLogEntry(entry, now):
         text = f"{who} was dismissed by the Jury for {d.get('duration_days')} days"
     elif kind == "member_returned":
         text = f"{who} came back at the end of their Dismissal"
+    elif kind == "face_match_retake":
+        text = f"{who}'s photo closely matched a Member's; they were asked for a new selfie"
+    elif kind == "join_refused_same_person":
+        text = f"{who} was not let in: the Jury decided they are already a Member"
     elif kind == "member_left":
         text = f"{who} left Meetinghouse"
     elif kind == "member_joined":

@@ -230,9 +230,22 @@
 <p><strong>Joining</strong></p>
 <ol>
 <li>The person gives their name, email address and town, and creates a passkey on that page. There is no password.</li>
-<li>They choose an ID-check company from the approved list and complete its check: a photo of their ID, a live selfie, and proof of their town, postal code and country. Meetinghouse also compares their selfie with every Member's public photo, whichever company checked them, so nobody can join twice under another name. A close match goes to the Jury Committee instead of blocking anyone, since twins and look-alikes exist.</li>
+<li>They choose an ID-check company from the approved list and complete its check: a photo of their ID, a live selfie, and proof of their town, postal code and country. Meetinghouse also compares their selfie with every Member's public photo, whichever company checked them, so nobody can join twice under another name. A close match never blocks anyone by itself, since twins and look-alikes exist (see When a face matches, below).</li>
 <li>When the check passes, they become a Member on their own, the verified selfie becomes their public photo, and a welcome email goes out.</li>
 </ol>
+<p><strong>When a face matches</strong></p>
+<ol>
+<li>The newcomer is held: they can read everything, but not Vote or comment yet. They are asked at once for a new live selfie, in good light and facing the camera, since a poor photo is the most likely cause of a false match.</li>
+<li>If the new selfie doesn't match, they become a Member, with no Vote and nobody else involved.</li>
+<li>If it still matches, the site starts a Jury Conversation by itself: “Are these the same person?”, with both photos side by side. The answers are Yes, No and “I can't tell.”
+<ul>
+<li>The usual Jury Threshold applies, and “I can't tell” counts as a Vote toward it.</li>
+<li>Approval is 51% of the Yes and No Votes; “I can't tell” doesn't count toward it.</li>
+<li>If too few Vote, or most say “I can't tell,” the newcomer is let in.</li>
+</ul></li>
+<li>A Yes when the match is a current Member (even one on a Dismissal) means one person trying to hold two accounts: the newcomer is not let in. A Yes when the match is someone who left means they have come back, which is allowed: they are let in, and any Dismissal they still owe starts then.</li>
+</ol>
+<p>The face print, 128 numbers made from the selfie (not a picture), is kept only while its owner is a Member, or after they leave while a Jury Conversation about them is open or a Dismissal they owe is unserved.</p>
 <p>The sign-up page says plainly that name and photo are visible to the public, and which company checks the ID and what it keeps.</p>
 <p><strong>Every year</strong></p>
 <ul>
@@ -361,10 +374,11 @@
 <li><strong>Part of transparency (stage 3):</strong> everyone can see everything without logging in, and the public log with its daily fingerprint, which records everything the software does and which version of the code is running.</li>
 <li><strong>Leaving Meetinghouse,</strong> from the Account page.</li>
 <li><strong>The map (stage 4),</strong> with each Member in a square about 5 km across.</li>
+<li><strong>Meetinghouse's own duplicate-face check,</strong> with the new selfie and the same-person Jury Conversation.</li>
 <li><strong>A practice sandbox</strong> at sandbox.meetinghouse.ai, with pretend Members, started fresh every night.</li>
 <li><strong>Safe updates:</strong> every new version is tested on the server before it goes live.</li>
 </ul>
-<p><strong>Not built yet:</strong> the server installing approved software itself, removing the last administrator powers, splitting a group, Stewards and the treasury, and Meetinghouse's own duplicate-face check.</p>
+<p><strong>Not built yet:</strong> the server installing approved software itself, removing the last administrator powers, splitting a group, and Stewards and the treasury.</p>
 <p><strong>Build order</strong></p>
 <ol>
 <li><strong>Decision rules:</strong> the three Committees' Votes, Dismissal, Contactors and the Threshold, the 5-restart limits, Discussion, and Rules changes with their limits.</li>

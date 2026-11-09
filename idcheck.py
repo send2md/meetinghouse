@@ -32,6 +32,7 @@ from typing import Optional
 
 JOIN = "join"
 RENEWAL = "renewal"
+RETAKE = "retake"  # a new live selfie after a face match (see facecheck.py)
 
 APPROVED = "approved"
 DECLINED = "declined"
@@ -88,6 +89,7 @@ class DiditProvider:
             JOIN: os.environ.get("MEETINGHOUSE_DIDIT_WORKFLOW_JOIN", ""),
             RENEWAL: os.environ.get("MEETINGHOUSE_DIDIT_WORKFLOW_RENEWAL", ""),
         }
+        self.workflows[RETAKE] = os.environ.get("MEETINGHOUSE_DIDIT_WORKFLOW_RETAKE", "") or self.workflows[RENEWAL]
 
     # -- talking to Didit --
 

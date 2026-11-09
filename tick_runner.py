@@ -15,7 +15,7 @@ import os
 import mailer
 import persistence
 import security
-from meetinghouse import PollResult, Subsection
+from meetinghouse import Dismissal, PollResult, Subsection
 
 REMINDER_DAYS = (30, 7)
 
@@ -73,6 +73,7 @@ def RunTick(house, conn, now):
             persistence.SaveParticipant(conn, participant)
     for entry in house.event_log[prev_len:]:
         persistence.LogEvent(conn, entry)
+    SettleSamePersonChecks(house, conn, closed, now)
     LogMembershipChanges(house, conn, now)
     ForgetFacePrints(house, conn, now)
     return closed
@@ -96,6 +97,69 @@ def LogMembershipChanges(house, conn, now):
                     conn,
                     {"kind": "member_returned", "at": now, "participant_id": participant.id, "jury_topic_id": dismissal.topic_id},
                 )
+
+
+def AdmitMember(house, conn, participant, now, extra=""):
+    """Make someone who passed their checks a Member, log it, and welcome them."""
+    security.MarkActivated(conn, participant.id, now)
+    participant.SignForm(signed_date=now.date())
+    persistence.SaveParticipant(conn, participant)
+    persistence.LogEvent(conn, {"kind": "member_joined", "at": now, "participant_id": participant.id})
+    member = security.GetMember(conn, participant.id)
+    if member is not None and member["email"]:
+        mailer.Send(
+            member["email"],
+            "Welcome to Meetinghouse",
+            f"Dear {participant.name},\n\n{extra}Your membership is active. "
+            f"You can now take part in Conversations, comment, Vote and start Conversations at {SiteAddress()}.\n\n"
+            "Once a year we'll ask you to confirm you're still here with a quick selfie.\n\nMeetinghouse",
+        )
+
+
+def SettleSamePersonChecks(house, conn, closed, now):
+    """Act on same-person Jury Conversations that just closed.
+
+    Yes, and the match is a current Member (even one on a Dismissal): one
+    person trying to hold two accounts, so the newcomer is not let in.
+    Yes, and the match is someone who left: they've come back, which is
+    allowed, so they're let in and any Dismissal they still owe starts now.
+    No, too few Votes, or mostly "I can't tell": they're let in.
+    """
+    for topic in closed:
+        if not topic.same_as_id:
+            continue
+        newcomer = house.participants.get(topic.target_participant_id)
+        match = house.participants.get(topic.same_as_id)
+        if newcomer is None or newcomer.HasLeft() or security.IsActivated(conn, newcomer.id):
+            continue
+        review = security.GetFaceReview(conn, newcomer.id)
+        similarity = review["similarity"] if review else 0.0
+        same = topic.result is PollResult.PASSED
+        if same and match is not None and not match.HasLeft():
+            security.SetFaceReview(conn, newcomer.id, match.id, similarity, "kept_out", now, topic.id)
+            persistence.LogEvent(conn, {"kind": "join_refused_same_person", "at": now, "participant_id": newcomer.id, "topic_id": topic.id})
+            member = security.GetMember(conn, newcomer.id)
+            if member is not None and member["email"]:
+                mailer.Send(
+                    member["email"],
+                    "Your Meetinghouse membership",
+                    f"Dear {newcomer.name},\n\nThe Jury Committee decided that you are already a Meetinghouse Member "
+                    "under another account, so this one can't become a Member. Each person can be a Member only once.\n\n"
+                    f"You can read the Conversation at {SiteAddress()}/topic/{topic.id}\n\nMeetinghouse",
+                )
+            continue
+        if same and match is not None:
+            # They came back: earlier Dismissals carry over (so the next one
+            # still doubles), and any they still owe starts now.
+            for old in match.dismissals:
+                if old.start >= match.left_at:
+                    old = Dismissal(start=now, end=now + (old.end - old.start), ordinal=old.ordinal, topic_id=old.topic_id)
+                newcomer.dismissals.append(old)
+            match.dismissals = [d for d in match.dismissals if d.start < match.left_at]
+            persistence.SaveParticipant(conn, match)
+            security.SetFacePrint(conn, match.id, "")  # nothing is owed under the old account now
+        security.SetFaceReview(conn, newcomer.id, topic.same_as_id, similarity, "admitted", now, topic.id)
+        AdmitMember(house, conn, newcomer, now, extra="The Jury Committee has finished looking at your photo. ")
 
 
 def KeepFacePrint(house, participant_id):

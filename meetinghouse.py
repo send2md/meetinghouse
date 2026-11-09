@@ -220,6 +220,12 @@ class RuleChange:
 
 
 # Fixed for every Committee: no Rules vote can change these.
+# Who starts the Conversations the site starts by itself (same-person checks).
+MEETINGHOUSE_ID = "meetinghouse"
+# A same-person Question passes with 51% of its Yes and No Votes ("I can't
+# tell" counts toward the Threshold but not toward Approval).
+SAME_PERSON_APPROVAL = 0.51
+
 SEASONING_TIME = dt.timedelta(weeks=3)
 MINIMUM_LIFE = dt.timedelta(weeks=3)
 
@@ -405,6 +411,9 @@ class Topic:
     question_attached_at: Optional[dt.datetime] = None
     # Members already asked "Would you like to vote?" here (asked once each).
     asked_to_vote: List[str] = field(default_factory=list)
+    # A same-person check: "Is target_participant_id (joining) the same person
+    # as same_as_id?" Yes / No / "I can't tell" (stored as ABSTAIN).
+    same_as_id: Optional[str] = None
 
     def __post_init__(self):
         if self.last_activity_at is None:
@@ -420,7 +429,7 @@ class Topic:
 
     def AllowedChoices(self):
         """Forum keeps Abstain ("standing aside"); Rules and Jury are Yes or No."""
-        if self.subsection is Subsection.FORUM:
+        if self.subsection is Subsection.FORUM or self.same_as_id:
             return [VoteChoice.YES, VoteChoice.ABSTAIN, VoteChoice.NO]
         return [VoteChoice.YES, VoteChoice.NO]
 
@@ -647,6 +656,44 @@ class Meetinghouse:
         self.MarkRead(topic.id, author.id, now)
         return topic
 
+    def OpenSamePersonCheck(self, newcomer_id):
+        for topic in self.topics.values():
+            if not topic.closed and topic.same_as_id and topic.target_participant_id == newcomer_id:
+                return topic
+        return None
+
+    def CreateSamePersonCheck(self, newcomer_id, member_id, now):
+        """The site's own Jury Conversation when a newcomer's face still matches
+        someone's after a new selfie: "Are these the same person?"."""
+        existing = self.OpenSamePersonCheck(newcomer_id)
+        if existing is not None:
+            return existing
+        newcomer = self.participants[newcomer_id]
+        member = self.participants[member_id]
+        question = f"Are {newcomer.name} (joining) and {member.name} the same person?"
+        topic = Topic(
+            id=str(uuid.uuid4()),
+            subsection=Subsection.JURY,
+            author_id=MEETINGHOUSE_ID,
+            title=f"Same person? {newcomer.name} and {member.name}",
+            description=(
+                f"{newcomer.name} passed their ID check, but their face closely matches {member.name}'s, "
+                "even after a new selfie. Software can't tell twins or look-alikes from one person joining twice, "
+                "so the Meeting decides. Yes: they are the same person. No: they are different people. "
+                "If you can't tell, say so: “I can't tell” counts toward the Threshold, not toward Approval."
+            ),
+            poll_question=question,
+            created_at=now,
+            rules=self.current_rules[Subsection.JURY],
+            target_participant_id=newcomer_id,
+            same_as_id=member_id,
+            pollster_id=MEETINGHOUSE_ID,
+            question_attached_at=now,
+        )
+        self.topics[topic.id] = topic
+        self._Log("topic_created", now, topic_id=topic.id, author_id=MEETINGHOUSE_ID, same_person=True)
+        return topic
+
     def MarkRead(self, topic_id, participant_id, now):
         """Record that the given Participant has read this Topic.
 
@@ -656,6 +703,8 @@ class Meetinghouse:
         self._RequireActive(participant_id, now)
         if participant_id in topic.readers:
             return False
+        if topic.same_as_id and participant_id in (topic.target_participant_id, topic.same_as_id):
+            return False  # the two people it's about aren't its Contactors
         topic.readers[participant_id] = now
         return True
 
@@ -702,6 +751,8 @@ class Meetinghouse:
         if choice not in topic.AllowedChoices():
             raise InvalidTopic(f"Abstain isn't an option in the {topic.subsection.value} Committee: Vote Yes or No.")
         self._RequireActive(participant_id, now)
+        if topic.same_as_id and participant_id in (topic.target_participant_id, topic.same_as_id):
+            raise InvalidTopic("This Conversation is about you, so it's for the rest of the Meeting to decide.")
 
         topic.readers.setdefault(participant_id, now)
         record = VoteRecord(
@@ -832,13 +883,22 @@ class Meetinghouse:
         if voters / len(readers) < topic.rules.voter_fraction:
             return PollResult.FAILED
 
-        favorable = counts[VoteChoice.YES] + counts[VoteChoice.ABSTAIN]
+        required = topic.rules.approval_fraction
+        if topic.same_as_id:
+            # "I can't tell" counts toward the Threshold, not toward Approval;
+            # if most Voters can't tell, the newcomer gets the benefit of the doubt.
+            if counts[VoteChoice.ABSTAIN] * 2 > voters:
+                return PollResult.FAILED
+            favorable = counts[VoteChoice.YES]
+            required = SAME_PERSON_APPROVAL
+        else:
+            favorable = counts[VoteChoice.YES] + counts[VoteChoice.ABSTAIN]
         total_decided = favorable + counts[VoteChoice.NO]
         if total_decided == 0:
             return PollResult.FAILED
 
         approval = favorable / total_decided
-        if approval >= topic.rules.approval_fraction - _EPSILON:
+        if approval >= required - _EPSILON:
             return PollResult.PASSED
         return PollResult.FAILED
 
@@ -870,7 +930,7 @@ class Meetinghouse:
             return
         if topic.subsection is Subsection.RULES:
             self._ApplyRuleChange(topic, now)
-        if topic.subsection is Subsection.JURY:
+        if topic.subsection is Subsection.JURY and not topic.same_as_id:
             self._ApplyDismissal(topic, now)
 
     def _ApplyRuleChange(self, topic, now):

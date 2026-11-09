@@ -2,7 +2,11 @@
 {% block title %}ID check — Meetinghouse{% endblock %}
 {% block content %}
 <div class="card" style="max-width:520px;margin:2rem auto;">
-  {% if row['status'] == 'approved' %}
+  {% if row['status'] == 'approved' and not activated and review and review['stage'] in ('retake', 'jury', 'kept_out') %}
+    <h1>{% if review['stage'] == 'retake' %}One more selfie, please{% elif review['stage'] == 'jury' %}Your check passed; one more step{% else %}Already a Member{% endif %}</h1>
+    <p>{% if review['stage'] == 'retake' %}Your ID check passed, but your photo looks a lot like another Member's. Please take a new selfie.{% elif review['stage'] == 'jury' %}Your new selfie still closely matches another Member's face, so the Jury Committee will decide whether you're the same person. You can read everything meanwhile.{% else %}The Jury Committee decided you are already a Member under another account.{% endif %}</p>
+    <p><a class="button" href="{{ url_for('Join') }}">Continue</a></p>
+  {% elif row['status'] == 'approved' %}
     <h1>You're in</h1>
     <p>{% if row['purpose'] == 'join' %}Your ID check passed and your membership is active. Welcome.{% else %}Thank you: your membership is renewed for another year.{% endif %}</p>
     <p><a class="button" href="{{ url_for('Dashboard') }}">Go to the Dashboard</a></p>

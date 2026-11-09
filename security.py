@@ -78,6 +78,15 @@ CREATE TABLE IF NOT EXISTS id_sessions (
     reference TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS face_reviews (
+    participant_id TEXT PRIMARY KEY,
+    matched_id TEXT NOT NULL,
+    similarity REAL NOT NULL,
+    stage TEXT NOT NULL,          -- retake, jury, admitted, kept_out
+    topic_id TEXT,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS recovery_requests (
     id TEXT PRIMARY KEY,
     participant_id TEXT NOT NULL REFERENCES participants(id),
@@ -435,3 +444,21 @@ def FacePrints(conn):
         row[0]: row[1]
         for row in conn.execute("SELECT participant_id, face_print FROM member_info WHERE face_print != ''")
     }
+
+
+def GetFaceReview(conn, participant_id):
+    return conn.execute("SELECT * FROM face_reviews WHERE participant_id = ?", (participant_id,)).fetchone()
+
+
+def SetFaceReview(conn, participant_id, matched_id, similarity, stage, now, topic_id=None):
+    conn.execute(
+        """
+        INSERT INTO face_reviews (participant_id, matched_id, similarity, stage, topic_id, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(participant_id) DO UPDATE SET
+            matched_id = excluded.matched_id, similarity = excluded.similarity, stage = excluded.stage,
+            topic_id = excluded.topic_id, updated_at = excluded.updated_at
+        """,
+        (participant_id, matched_id, similarity, stage, topic_id, _Iso(now)),
+    )
+    conn.commit()

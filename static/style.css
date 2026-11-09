@@ -169,3 +169,7 @@ table.log th, table.log td { border-bottom: 1px solid #e3ddd3; padding: 0.35rem 
 table.log td.when { white-space: nowrap; }
 input[type=submit].danger { background: var(--no); }
 .member-map { height: 480px; border-radius: 8px; margin: 1rem 0; border: 1px solid #d8d2c8; }
+.same-person { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; }
+.same-person figure { margin: 0; text-align: center; }
+.same-person img { width: 220px; height: 220px; object-fit: cover; border-radius: 8px; border: 1px solid #d8d2c8; }
+.same-person p { flex-basis: 100%; }

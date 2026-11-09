@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ topic.title }} — Meetinghouse{% endblock %}
 {% block content %}
+{% macro cl(choice) %}{% if topic.same_as_id and choice.value == 'Abstain' %}I can't tell{% else %}{{ choice.value }}{% endif %}{% endmacro %}
 <h1>{{ topic.title }}
   {% if topic.closed %}
     <span class="badge {{ topic.result.value|lower }}">{{ topic.result.value }}</span>
@@ -9,6 +10,18 @@
   {% endif %}
 </h1>
 <p class="muted">{{ topic.subsection.value }} Committee · started {{ topic.created_at|fmt }} · Initiator: {{ participant_name(topic.author_id) }}{% if topic.pollster_id %} · Pollster: {{ participant_name(topic.pollster_id) }}{% endif %} · {{ contactors|length }} Contactor{{ 's' if contactors|length != 1 }}{% if counts %} · {{ counts.values()|sum }} Voter{{ 's' if counts.values()|sum != 1 }}{% endif %}</p>
+
+{% if topic.same_as_id %}
+<div class="card same-person">
+  {% for pid, label in [(topic.target_participant_id, "Joining"), (topic.same_as_id, "Member" if not house_participant(topic.same_as_id).HasLeft() else "Left Meetinghouse")] %}
+  <figure>
+    <img src="{{ url_for('MemberPhoto', participant_id=pid) }}" alt="Photo of {{ participant_name(pid) }}">
+    <figcaption><strong>{{ participant_name(pid) }}</strong><br><span class="muted">{{ label }}</span></figcaption>
+  </figure>
+  {% endfor %}
+  {% if topic.description %}<p>{{ topic.description }}</p>{% endif %}
+</div>
+{% endif %}
 
 {% if topic.HasPoll() %}
 <div class="card question">
@@ -33,7 +46,7 @@
 {% if ask_to_vote %}
 <div class="card notice">
   <p><strong>Would you like to Vote?</strong> You've opened this Conversation, so you're one of its Contactors.
-    If you don't Vote, it's harder for the Question to pass. <a href="#votes">Go to the Vote</a></p>
+    If you don't Vote, it's harder for the Question to pass.{% if topic.same_as_id %} If you can't tell from the photos, Vote “I can't tell”: it counts toward the Threshold, not toward Approval.{% endif %} <a href="#votes">Go to the Vote</a></p>
 </div>
 {% endif %}
 
@@ -77,7 +90,7 @@
       <div class="comment">
         <div class="meta">
           {{ participant_name(c.participant_id) }} · Voted
-          <span class="badge {{ c.choice.value|lower }}">{{ c.choice.value }}</span>
+          <span class="badge {{ c.choice.value|lower }}">{{ cl(c.choice) }}</span>
           {{ c.timestamp|fmt }}
           {% if c.revoked %}<span class="badge revoked">withdrawn</span>{% endif %}
           {% if c.removed_by %}<span class="badge dismissed">removed: dismissed</span>{% endif %}
@@ -111,10 +124,13 @@
   <h3>Votes</h3>
   <p class="counts">
     <span class="badge yes">Yes {{ counts[VoteChoice.YES] }}</span>
-    {% if topic.subsection.value == "Forum" %}<span class="badge abstain">Abstain {{ counts[VoteChoice.ABSTAIN] }}</span>{% endif %}
+    {% if topic.subsection.value == "Forum" or topic.same_as_id %}<span class="badge abstain">{{ cl(VoteChoice.ABSTAIN) }} {{ counts[VoteChoice.ABSTAIN] }}</span>{% endif %}
     <span class="badge no">No {{ counts[VoteChoice.NO] }}</span>
     {% if dismissed_count %}<span class="badge dismissed">Dismissed {{ dismissed_count }}</span>{% endif %}
   </p>
+  {% if not topic.closed and contactors|length > counts.values()|sum %}
+  <p class="muted">{{ contactors|length - counts.values()|sum }} Contactor{{ 's have' if contactors|length - counts.values()|sum != 1 else ' has' }} opened this Conversation without Voting.</p>
+  {% endif %}
 
   {% for note in topic.dismissal_notes %}
     <p class="muted">
@@ -125,10 +141,10 @@
 
   {% if can_act %}
     <form method="post" action="{{ url_for('CastVote', topic_id=topic.id) }}">
-      <label>Your Vote{% if my_vote %} (currently {{ my_vote.choice.value }} — Voting again replaces it){% endif %}</label>
+      <label>Your Vote{% if my_vote %} (currently {{ cl(my_vote.choice) }} — Voting again replaces it){% endif %}</label>
       <select name="choice" required>
         {% for choice in topic.AllowedChoices() %}
-          <option value="{{ choice.value }}" {% if my_vote and my_vote.choice == choice %}selected{% endif %}>{{ choice.value }}</option>
+          <option value="{{ choice.value }}" {% if my_vote and my_vote.choice == choice %}selected{% endif %}>{{ cl(choice) }}</option>
         {% endfor %}
       </select>
       <label>What is your reason?</label>

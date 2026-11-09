@@ -21,6 +21,30 @@
   {% endif %}
 </div>
 
+{% if review and review['stage'] == 'retake' %}
+<div class="card notice">
+  <h3>One more selfie, please</h3>
+  <p>Your ID check passed, but your photo looks a lot like another Member's. That's usually just the photo: the light, the angle or the camera.
+    Please take a new live selfie in good light, facing the camera, with nothing covering your face.</p>
+  <form method="post" action="{{ url_for('RetakeSelfie') }}">
+    <input type="hidden" name="provider" value="{{ latest['provider'] if latest else '' }}">
+    <p><input type="submit" value="Take a new selfie"></p>
+  </form>
+</div>
+{% elif review and review['stage'] == 'jury' %}
+<div class="card notice">
+  <h3>The Jury Committee is looking at your photo</h3>
+  <p>Your ID check passed, but even your new selfie closely matches another Member's face. Software can't tell twins or look-alikes from
+    one person joining twice, so the Meeting decides, in <a href="{{ url_for('TopicDetail', topic_id=review['topic_id']) }}">this Jury Conversation</a>.
+    You can read everything meanwhile. If too few Vote, or most can't tell, you're let in.</p>
+</div>
+{% elif review and review['stage'] == 'kept_out' %}
+<div class="card notice">
+  <h3>Already a Member</h3>
+  <p>The Jury Committee decided you are already a Meetinghouse Member under another account (<a href="{{ url_for('TopicDetail', topic_id=review['topic_id']) }}">the Conversation</a>).
+    Each person can be a Member only once.</p>
+</div>
+{% else %}
 <div class="card">
   <h3>Step 3: ID check</h3>
   {% if latest and latest['status'] == 'declined' %}
@@ -43,5 +67,6 @@
     </form>
   {% endif %}
 </div>
+{% endif %}
 <script src="{{ url_for('static', filename='passkeys.js') }}"></script>
 {% endblock %}
