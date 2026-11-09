@@ -200,3 +200,14 @@ def test_front_page_links_to_the_note_about_the_cover_art(client):
     page = test_client.get("/about-the-art").data.decode()
     assert "About Meetinghouse and the cover art" in page and "The School of" in page
     assert "eVote" not in page
+
+
+def test_design_page_is_public_and_linked_from_the_front_page(client):
+    test_client, _ = client
+    front = test_client.get("/").data.decode()
+    assert 'href="/design"' in front
+    page = test_client.get("/design")
+    assert page.status_code == 200
+    text = page.data.decode()
+    assert "Meetinghouse Design" in text and "Stewards and the treasury" in text
+    assert "A Question passes only after its Seasoning Time" in text

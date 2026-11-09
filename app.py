@@ -240,6 +240,12 @@ def AboutTheArt():
     return render_template("about_art.html")
 
 
+@app.route("/design")
+def Design():
+    """The design document: how Meetinghouse works and why. Public."""
+    return render_template("design.html")
+
+
 @app.route("/look")
 def LookAround():
     """"Just look around": everyone can see everything, without logging in."""

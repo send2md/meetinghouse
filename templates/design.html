@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% block title %}Meetinghouse Design{% endblock %}
+{% block content %}
+<article class="card design">
+<h1>Meetinghouse Design</h1>
+<p class="muted">Begun October 19, 2026 · Marilyn Davis</p>
+
+<h2>Purpose and principles</h2>
+<p>Meetinghouse, at meetinghouse.ai, is an online Meeting for Business in the Quaker spirit: Members discuss, Vote and Vote again until the Meeting reaches a decision or gives up. This document records the design agreed in October 2026, before anyone is invited.</p>
+<ul>
+<li><strong>Change is slow.</strong> Everyone always has time to notice and respond.</li>
+<li><strong>Everyone can see everything.</strong> Only logged-in Members can change anything: Vote, comment, or start a Conversation.</li>
+<li><strong>Nobody has to be trusted.</strong> There are no administrator powers beyond running the server. Everything the software does is in a public log, and the code is public on GitHub.</li>
+<li><strong>The founding Rules are set now.</strong> Once the Meeting governs itself, changes to how it works need a Rules Vote, so everything foundational is built in before launch.</li>
+</ul>
+
+<h2>Words</h2>
+<p>These words have exact meanings in Meetinghouse and are always capitalized.</p>
+<table>
+<tr><th>Word</th><th>Meaning</th></tr>
+<tr><td>Member</td><td>A person who has joined: passed the ID check, and confirms once a year that they're still here</td></tr>
+<tr><td>Conversation</td><td>A matter brought to the Meeting in one of the three Committees</td></tr>
+<tr><td>Title</td><td>The name of a Conversation, shown in lists</td></tr>
+<tr><td>Committee</td><td>One of the three bodies that receive Conversations and Questions for deliberation: the Forum Committee, the Rules Committee and the Jury Committee. Every Member is invited to take part in all three</td></tr>
+<tr><td>Initiator</td><td>The Member who started a Conversation</td></tr>
+<tr><td>Question</td><td>What the Pollster asks the Meeting to decide in a Conversation. Members answer it by Voting. A Conversation has at most one Question</td></tr>
+<tr><td>Pollster</td><td>The Member who attached the Question to a Conversation</td></tr>
+<tr><td>Discussion</td><td>The Comments in a Conversation, where the Meeting talks a matter through. Discussion comes first; a Question is optional</td></tr>
+<tr><td>Comment</td><td>What a Member writes in a Conversation</td></tr>
+<tr><td>Contactor</td><td>A Member who has touched a Conversation: opened it, posted a Comment on it, or Voted on the Question if there is one</td></tr>
+<tr><td>Vote</td><td>A Member's answer to a Question: Yes or No (or Abstain, in the Forum Committee), always with its written reason</td></tr>
+<tr><td>Voter</td><td>A Contactor whose Vote currently counts</td></tr>
+<tr><td>Threshold</td><td>Voters ÷ Contactors: the share of Contactors who Voted</td></tr>
+<tr><td>Approval</td><td>Votes in favor ÷ all Votes. In the Forum Committee, Abstain counts in favor</td></tr>
+<tr><td>Minimum Life</td><td>How long a Conversation stays open, at least, counted from when its Question was attached</td></tr>
+<tr><td>Seasoning Time</td><td>How long a Conversation must rest without new activity before it closes, so the matter can season (the Quaker word for letting a concern mature)</td></tr>
+<tr><td>Dismissal</td><td>A temporary removal of a Member, decided by the Jury</td></tr>
+</table>
+
+<h2>The three Committees</h2>
+<p>Every decision is made in a Conversation in one of three Committees. They share the same mechanics but decide different things.</p>
+<table>
+<tr><th>Committee</th><th>What it decides</th><th>Minimum Life</th><th>Threshold required</th><th>Seasoning Time</th><th>Approval required</th></tr>
+<tr><td>Forum Committee</td><td>Outside matters</td><td>3 weeks</td><td class="green">25%</td><td>3 weeks</td><td class="green">66.7%</td></tr>
+<tr><td>Rules Committee</td><td>How Meetinghouse works: its Thresholds and Approvals, any change to the software, and the list of ID-check companies</td><td>3 weeks</td><td class="green">50%</td><td>3 weeks</td><td class="green">51%</td></tr>
+<tr><td>Jury Committee</td><td>Dismissing a Member for a while</td><td>3 weeks</td><td class="green">50%</td><td>3 weeks</td><td class="green">20%</td></tr>
+</table>
+<p>The numbers in green can be changed by a Vote in the Rules Committee. Each Vote can move a number by at most 5% of its current value, and always by at least 1 point, in whole percentages. For example, from 66.7% the choices are 63% to 70%; from 25%, they are 24% to 26%. Every green number, Threshold or Approval, in every Committee, always stays between 9% and 100%. Minimum Life and Seasoning Time are fixed. The <a href="{{ url_for('CurrentRules') }}">Current Rules</a> page shows the numbers as they stand today.</p>
+<ul>
+<li><strong>Forum</strong> Votes are Yes, Abstain or No. Abstain means standing aside, and counts in favor.</li>
+<li><strong>Rules</strong> Votes are Yes or No. Someone who wants a Rule kept as it is Votes No.</li>
+<li><strong>Jury</strong> Votes are Yes or No: a decision about a person is clear. A Dismissal lasts 2 weeks, then 4, then 8, doubling each time, and always ends.</li>
+</ul>
+<p>The Jury's Approval bar is deliberately low, so a few Members can act against someone who is abusive without the whole Meeting having to confront them. The Threshold still requires half the Contactors to Vote, so it can't be done quietly.</p>
+
+<h2>How a Conversation closes</h2>
+<p>A Conversation closes once it has had its Question for its Minimum Life and has then gone without new activity for its Seasoning Time. At that moment the Question passes only if its Threshold is met (enough Contactors Voted) and its Approval is met (enough of the Votes were in favor).</p>
+<figure class="diagram">
+<svg viewBox="0 0 760 400" role="img" aria-label="A Question passes only after its Seasoning Time, then meets its Threshold and Approval" font-size="13" font-family="inherit">
+<defs><marker id="close-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8a7f72"/></marker></defs>
+<text x="24" y="34" font-size="15" font-weight="600" fill="currentColor">A Question passes only after its Seasoning Time, then meets its Threshold and Approval</text>
+<g fill="none" stroke="#8a7f72" stroke-width="1.25">
+<path d="M188 120H232" marker-end="url(#close-arrow)"/>
+<path d="M388 120H452" marker-end="url(#close-arrow)"/>
+<path d="M608 120H700V72H530V96" marker-end="url(#close-arrow)"/>
+<path d="M530 144V180H150V214" marker-end="url(#close-arrow)"/>
+<path d="M220 250H300" marker-end="url(#close-arrow)"/>
+<path d="M440 250H522" marker-end="url(#close-arrow)"/>
+<path d="M150 286V350H182" marker-end="url(#close-arrow)"/>
+<path d="M370 286V350H338" marker-end="url(#close-arrow)"/>
+</g>
+<g fill="none" stroke="#8a7f72" stroke-width="1.25">
+<rect x="32" y="96" width="156" height="48" rx="8"/>
+<rect x="232" y="96" width="156" height="48" rx="8"/>
+<rect x="452" y="96" width="156" height="48" rx="8"/>
+<rect x="182" y="326" width="156" height="48" rx="8"/>
+<polygon points="80,250 150,214 220,250 150,286"/>
+<polygon points="300,250 370,214 440,250 370,286"/>
+</g>
+<rect x="522" y="226" width="156" height="48" rx="8" fill="#7a5a2e" fill-opacity="0.12" stroke="#7a5a2e" stroke-width="2"/>
+<g text-anchor="middle" fill="currentColor">
+<text x="110" y="124">Question attached</text>
+<text x="310" y="124">Minimum Life passes</text>
+<text x="530" y="124">Seasoning Time passes</text>
+<text x="150" y="254">Threshold met?</text>
+<text x="370" y="254">Approval met?</text>
+<text x="600" y="254" font-weight="600">Passes</text>
+<text x="260" y="354">Fails</text>
+</g>
+<g font-size="11.5" fill="#6b645c">
+<text x="550" y="62" text-anchor="middle">restarted by each Member's first 5 Comments and first 5 Votes</text>
+<text x="260" y="242" text-anchor="middle">yes</text>
+<text x="481" y="242" text-anchor="middle">yes</text>
+<text x="158" y="312">no</text>
+<text x="378" y="312">no</text>
+</g>
+</svg>
+</figure>
+<p>The Threshold is checked first: if too few Contactors Voted, the Question fails whatever the Votes say. A Conversation without a Question never closes; it stays open for Discussion.</p>
+
+<h2>Discussion and Voting</h2>
+<p>Discussion brings the Meeting toward consensus; Voting only records where it stands. Members may comment and Vote as much as they like, but each can keep a Conversation open only so many times: 5 Comments and 5 Votes.</p>
+<p><strong>Discussion</strong></p>
+<ul>
+<li>Discussion has its own box, with no limit on how much anyone writes. Comments and Votes, each with its reason, appear together in one timeline in the Conversation.</li>
+<li>Only each Member's first 5 Comments in a Conversation restart its Seasoning Time. After that they can keep commenting, but those Comments don't keep the Conversation open.</li>
+<li><strong>Near-identical check:</strong> a Comment that is nearly the same as one the same Member made earlier in that Conversation is still posted, uses up one of their 5, and does not restart Seasoning Time. They see: “This sounds close to what you said on October 3. It's posted, but it won't keep the Conversation open.”</li>
+</ul>
+<p><strong>The Question</strong></p>
+<ul>
+<li>A Forum Conversation may start without a Question. Any Contactor can attach one, at any time, and becomes its Pollster.</li>
+<li>The Initiator is asked first, when starting the Conversation: “Do you want to attach a Question to this Conversation?” After that, every Contactor who opens a Conversation that still has no Question is asked the same.</li>
+<li>Once a Question is attached, it is shown to every Contactor, above the Votes, and the Conversation's Minimum Life of 3 weeks starts then.</li>
+<li>Rules and Jury Conversations always have a Question from the start; their Initiator is also their Pollster.</li>
+</ul>
+<p><strong>Votes</strong></p>
+<ul>
+<li>Every Vote must carry a written reason, and the reason is always shown with it. A Member can Vote and change their Vote as often as they like; their latest Vote is the one that counts.</li>
+<li>The first time a Member opens a Conversation that has a Question they haven't Voted on, they are asked once: “Would you like to Vote? You've opened this Conversation, so you're one of its Contactors. If you don't Vote, it's harder for the Question to pass.” They are never asked again in that Conversation.</li>
+<li>Only each Member's first 5 Votes on a Question restart its Seasoning Time. Each Vote's receipt says how many are left, for example: “Vote recorded. Your Votes can keep this Conversation open 3 more times.” After the fifth: “Vote recorded. It counts, but it no longer keeps the Conversation open.”</li>
+<li>Withdrawing a Vote does not restart Seasoning Time and does not use up one of the 5.</li>
+</ul>
+<p>Someone who uses these limits in bad faith, only to block a decision, can be raised in the Jury as non-cooperative.</p>
+
+<h2>Contactors and the Threshold</h2>
+<p>The Threshold counts only current Members who have touched the Conversation, so nobody who can't Vote makes a Question harder to pass.</p>
+<ul>
+<li>The Initiator is a Conversation's first Contactor. Seeing a Conversation's Title in a list does not make someone a Contactor.</li>
+<li><strong>A paused Member</strong> (one who missed their yearly selfie) stays a Contactor only in Conversations where they Voted, and those Votes still count. In Conversations they only touched, they are left out until they come back.</li>
+<li><strong>A dismissed Member</strong> is taken off the Contactors and the Votes of every open Conversation (see Dismissal).</li>
+</ul>
+<p><strong>Example.</strong> Say a Jury Conversation has 10 Contactors. With a 50% Threshold, 5 must Vote. If one of the 10 is paused and had not Voted, there are 9 Contactors, and 5 Voters are needed from those 9. If the paused Member had already Voted, there are still 10 Contactors and they are one of the 5 Voters.</p>
+
+<h2>Dismissal</h2>
+<p>A Dismissal is temporary, visible to everyone, and gives the Meeting time to react before any Conversation it affects can close.</p>
+<ul>
+<li><strong>One at a time:</strong> only one Jury Conversation about a Member can be open. Anyone trying to start another sees: “There's already an open Jury Conversation about Jane Doe — join that one instead.”</li>
+<li><strong>Never about yourself:</strong> the list of Members a Jury Conversation can be about leaves out the person starting it, and is in order of last name.</li>
+<li><strong>Length:</strong> 2 weeks the first time, then 4, then 8, doubling each time. A Dismissal always ends.</li>
+</ul>
+<p><strong>When a Member is dismissed</strong></p>
+<ol>
+<li>Their Votes and their Contactor status come off every open Conversation.</li>
+<li>Seasoning Time restarts in each of those Conversations, so everyone has a full Seasoning Time to see the new tally and respond.</li>
+<li>Each affected Conversation's tally shows the Dismissal as its own count, for example: Yes 4 · Abstain 1 · No 2 · Dismissed 1.</li>
+<li>A note in the Conversation names the Member and links to the whole Jury Conversation, for example: “Jane Doe's Yes Vote removed: dismissed by the Jury on October 15.”</li>
+<li>An announcement listing every affected Conversation and its current tally goes on the Jury Conversation's result and into everyone's Daily Summary.</li>
+</ol>
+<p><strong>When they come back</strong></p>
+<ul>
+<li>They return quietly, with all rights: no announcement, and Seasoning Time does not restart.</li>
+<li>The Dismissed count drops off the tallies.</li>
+<li>Their old Votes don't come back. If a Conversation is still open, they can touch it and Vote again, with a fresh 5 restarts.</li>
+</ul>
+
+<h2>Changing the Rules</h2>
+<p>The Meeting can change only the green numbers in The three Committees: a Threshold or an Approval, one at a time, by at most 5% of its current value per Rules Vote, and never past its limits.</p>
+<ul>
+<li><strong>One setting per Conversation,</strong> for example “Forum Approval” or “Jury Threshold.”</li>
+<li><strong>One open Conversation per setting.</strong> Anyone trying to start a second sees: “There's already an open Conversation about Forum Approval — join that one instead.” Conversations about different settings can run at the same time.</li>
+<li><strong>Fixed forever:</strong> Minimum Life, Seasoning Time, and the limits themselves.</li>
+<li><strong>The Rules page</strong> on the site lists every setting for each Committee, its current level, when it last changed, and a link to any open Conversation about it.</li>
+<li><strong>Software changes need a Rules Vote.</strong> Each one names an exact version of the code on GitHub. When it passes, the server installs exactly that version itself and records it in the public log.</li>
+<li><strong>ID-check companies need a Rules Vote.</strong> Each Rules Conversation adds or removes one company from the approved list. Members already verified by a removed company stay Members, and choose another company at their next yearly selfie.</li>
+</ul>
+<p>Because every Rules Conversation stays open at least 3 weeks, and each Vote moves a number by at most 5% of its value, moving Approval from 51% to 66% takes five successive Votes (51, 54, 57, 60, 63, 66) and about six months.</p>
+
+<h2>How the Committees connect</h2>
+<p>Only two kinds of decision change the site itself, and both happen automatically the moment a Vote passes: a Dismissal by the Jury Committee and a change by the Rules Committee. A Forum Committee decision is a record of what the Meeting decided; the site does not act on it.</p>
+<p><strong>When the Jury Committee dismisses someone</strong></p>
+<ul>
+<li><strong>Removed:</strong> their Votes and their Contactor status in every open Conversation, in all three Committees (see Dismissal).</li>
+<li><strong>Kept:</strong> their account, name and photo, and the Jury's note on each affected Conversation. Their Comments and Votes, everywhere, are hidden while they are away and come back into view when they return, the removed Votes marked “removed: dismissed”.</li>
+<li><strong>How long:</strong> 2 weeks the first time, then 4, then 8, doubling each time. A Dismissal always ends.</li>
+<li><strong>While dismissed:</strong> they are gone for the duration. They cannot log in, and anyone dismissed while logged in is logged out at once. Nobody can name them in another Jury Conversation while they are away.</li>
+</ul>
+<p><strong>Coming back</strong></p>
+<ul>
+<li><strong>When the time is up:</strong> they are back automatically, with all rights; there is nothing to apply for. Their old Votes don't come back, but they can Vote again in any Conversation still open.</li>
+<li><strong>Before the time is up:</strong> the login page says only when they can log in again. Nothing shortens a Dismissal; only the Rules Committee could change how Dismissals work.</li>
+<li><strong>Joining again under another name:</strong> the ID check's duplicate search, and Meetinghouse's own comparison with every Member's photo, send the new account to the Jury Committee instead of letting it in.</li>
+<li><strong>The yearly selfie</strong> still falls due during a Dismissal. If it lapses, they come back paused until they do it.</li>
+</ul>
+<p><strong>When the Rules Committee changes a Rule</strong></p>
+<ul>
+<li><strong>A Threshold or an Approval:</strong> the site changes the number itself the moment the Conversation passes, and records it in the public log. Conversations already open keep the Rules they started with; new ones use the new number. Nobody has to do anything.</li>
+<li><strong>A software change:</strong> anyone can write it, whether a Member, a programmer, or Claude when someone asks. It is published on GitHub, and a Rules Conversation names that exact version. If it passes, the server installs exactly that version itself and records it in the public log. Nothing else is ever installed.</li>
+<li><strong>Only passed Votes change the site.</strong> No administrator, programmer or AI has a way to change a Rule or install software through the site.</li>
+</ul>
+<p><strong>Who could get around this</strong></p>
+<ul>
+<li><strong>Whoever runs the server</strong> could change the code or the data directly. The public code, the code version in the log and the log's daily fingerprint make that detectable, not impossible (see Known risks).</li>
+<li><strong>Claude</strong> is not part of the running site. It does nothing on its own and does not watch the site; it works only when someone asks it to, and anything it writes still needs a Rules Vote before it can go live.</li>
+</ul>
+
+<h2>Stewards and the treasury</h2>
+<p>Meetinghouse keeps running after its founder, because the people who pay its bills and keep its server going are chosen by Vote, and all its money is in the open.</p>
+<p><strong>Stewards</strong></p>
+<ul>
+<li>Three Stewards keep the lights on: they pay for the hosting and the meetinghouse.ai name, and keep the server running. They have no other powers: no say in decisions, and no way to change a Rule or install software.</li>
+<li>A Stewardship lasts one year, and nobody can be a Steward twice. A Rules Vote can replace a Steward at any time.</li>
+<li><strong>Not all at once.</strong> A new Steward is chosen every four months, so there are always two who already know the job. To begin, the first Vote keeps going until three are left; those three serve four, eight and twelve months, so the turns are staggered from then on.</li>
+<li><strong>Each new Steward is a fresh Vote</strong> in the Rules Committee. When one is needed, the Daily Summary asks for volunteers, and any Member can put their own name forward. However many stand, the rate-the-choices Vote picks one: Voters rate only the people they want to, each sees the names in a different random order, and each volunteer's page shows their photo, town and a few words about why they're standing.</li>
+<li><strong>Thanking the others.</strong> When the Vote closes, each volunteer who wasn't chosen gets one message, sent once: “Thank you so much for volunteering for this critical position. Please volunteer again for the next Steward position if you are still interested.” It carries a check box, so they can put their name forward for the next one in one click.</li>
+<li>The hosting account and the domain name belong to the group, held by a nonprofit or the treasury's host, with the Stewards as its contacts, so no account depends on one person.</li>
+</ul>
+<p><strong>The Steward Vote</strong></p>
+<ol>
+<li><strong>The site opens it by itself.</strong> Three months before a Stewardship ends, or at once if a Steward is replaced, the site starts a Steward Conversation in the Rules Committee, and the Daily Summary asks for volunteers.</li>
+<li><strong>Who can volunteer:</strong> any current Member who has never been a Steward. A volunteer can withdraw until the Vote begins.</li>
+<li><strong>Volunteering stays open 3 weeks,</strong> and everyone can comment and ask the volunteers questions.</li>
+<li><strong>Then it depends on how many stood:</strong>
+<ul>
+<li>Two or more: the rate-the-choices Vote begins. It stays open at least 3 weeks and closes once no ballot has changed for a Seasoning Time. It has no Threshold, so a Steward is always chosen.</li>
+<li>Exactly one: an ordinary Yes-or-No Rules Vote on that person, with the usual Threshold and Approval.</li>
+<li>None: the Daily Summary asks again every week until someone stands. Meanwhile the outgoing Steward stays on; that is a short extension, not a second term.</li>
+</ul></li>
+<li><strong>The new Steward starts</strong> the day the outgoing Steward's year ends, and each volunteer who wasn't chosen gets the thank-you message with its check box.</li>
+</ol>
+<p><strong>The treasury</strong></p>
+<ul>
+<li>The treasury is part of the Rules Committee. Every donation and every bill is public, and the Rules Committee page shows the balance and the next bill due.</li>
+<li>Stewards pay the routine bills, hosting and the domain name, and pay them years ahead when the treasury allows, so a gap between Stewards never takes the site down.</li>
+<li>Any other spending needs a Vote in the Rules Committee.</li>
+</ul>
+
+<h2>Membership and login</h2>
+<p>Joining is fully automatic: an ID check proves each Member is a real, single person, and no administrator is involved.</p>
+<p><strong>Joining</strong></p>
+<ol>
+<li>The person gives their name, email address and town, and creates a passkey on that page. There is no password.</li>
+<li>They choose an ID-check company from the approved list and complete its check: a photo of their ID, a live selfie, and proof of their town, postal code and country. Meetinghouse also compares their selfie with every Member's public photo, whichever company checked them, so nobody can join twice under another name. A close match goes to the Jury Committee instead of blocking anyone, since twins and look-alikes exist.</li>
+<li>When the check passes, they become a Member on their own, the verified selfie becomes their public photo, and a welcome email goes out.</li>
+</ol>
+<p>The sign-up page says plainly that name and photo are visible to the public, and which company checks the ID and what it keeps.</p>
+<p><strong>Every year</strong></p>
+<ul>
+<li>Once a year the Member clicks “I'm still here” and takes a live selfie, which is matched to their face and becomes their new photo.</li>
+<li>Reminder emails go out a month and a week before.</li>
+<li>If the year runs out, the Member is paused: they can read everything but not Vote or post, until they do the selfie.</li>
+</ul>
+<p><strong>Logging in and recovery</strong></p>
+<ul>
+<li>Members log in with their passkey: their device's face, fingerprint or PIN unlock.</li>
+<li>Every login shows “You last logged in on…”, so a stranger's login is noticed.</li>
+<li>A Member who loses their device asks for a recovery code by email. It works only 48 hours later, and an email goes out at once: “Someone asked to recover your Meetinghouse login. If this wasn't you, click here to cancel.”</li>
+<li>Five wrong tries pause a login for 15 minutes.</li>
+</ul>
+<p><strong>Who keeps what</strong></p>
+<table>
+<tr><th></th><th>Meetinghouse keeps</th><th>The ID-check service keeps</th></tr>
+<tr><td>Name</td><td>Yes, shown publicly</td><td>Yes</td></tr>
+<tr><td>Photo</td><td>The verified selfie, shown publicly</td><td>ID photos and selfies, for as long as its terms say</td></tr>
+<tr><td>ID document details</td><td>No: only “verified,” the date, the country and a reference number</td><td>Yes</td></tr>
+<tr><td>Face template for duplicate search</td><td>No</td><td>Yes, while the person is a Member</td></tr>
+<tr><td>Address</td><td>No: only the town, postal code, country and a rough spot on the map</td><td>Whatever the ID shows</td></tr>
+</table>
+<p><strong>Choosing the ID-check company.</strong> Each Member chooses their ID-check company from an approved list, when joining and again at each yearly selfie. We set the starting list before launch; after that, the Rules Committee can add or remove companies. The list stays short, because each company needs its own account and connection, and a careless company would lower the bar for everyone.</p>
+<p>No company is named yet. The starting list will be chosen just before launch, from companies that check IDs from many countries with a live selfie and proof of address, after trying them with a few real IDs.</p>
+
+<h2>Transparency</h2>
+<p>Anyone can check what Meetinghouse does: its rules, its record and its code are all open.</p>
+<ul>
+<li><strong>Everyone can see everything:</strong> Conversations, Questions, Votes, Comments, tallies, the Rules page, the list of Members with names and photos, and the map. Changing anything needs a Member's login.</li>
+<li><strong>A public log</strong> records everything the software does: Members joining and pausing, Questions closing and their results, Rules changes, Dismissals and returns, login recoveries, and which version of the code is running.</li>
+<li><strong>Tampering shows.</strong> Each day's Daily Summary carries a short fingerprint of the log. Anyone who saves it can later prove whether earlier entries were changed.</li>
+<li><strong>No administrator powers.</strong> Joining, recovery, renewal and installing approved software are automatic. What remains is someone who keeps the server running.</li>
+<li><strong>The map</strong> shows each Member as a dot in a rough area, about 5 km across, with the town name. No street address is stored.</li>
+</ul>
+
+<h2>Growing: splitting a group</h2>
+<p>When a group feels too big, any Member can propose splitting it into two groups of about half its Members each. Each half makes decisions for its own area, and the group it came from still decides for everyone in it.</p>
+<p><strong>Names</strong></p>
+<ul>
+<li>The whole Meetinghouse is Group A. When A splits, its halves are AA and AB. When AA splits, its halves are AAA and AAB, and so on.</li>
+<li>A Member belongs to their own group and every group above it: a Member of AAB is also a Member of AA and of A.</li>
+</ul>
+<p><strong>Deciding to split</strong></p>
+<ol>
+<li>Any Member can start a Rules Conversation asking whether their group should split. A group needs at least 30 Members to split; below that, the software says no. This number is fixed.</li>
+<li>Only one split Conversation per group can be open at a time.</li>
+<li>It is an ordinary Yes-or-No Rules Vote, with the usual Threshold and Approval. If it fails, nothing more happens until a Member starts a new one. The group may not be as too big as someone thought.</li>
+<li>When it starts, the map of where the group's Members live is frozen. New Members can still join; they are placed in a half once the split is done. Members who move wait until the split is over.</li>
+</ol>
+<p><strong>Choosing how to split</strong></p>
+<p>Once the group has decided to split:</p>
+<ol>
+<li>The software shows the map with a circle around each concentration of Members. A Member outside every circle counts with the nearest one. If one circle holds more than 60% of the group, the software breaks it into smaller circles.</li>
+<li>The software combines the circles into two halves, in 2 different ways if it can.</li>
+<li>Every Member of the group sees the map and is invited to suggest another way, by choosing which circles go in each half.</li>
+<li>Suggestions stay open until none has come in for a Seasoning Time. Only each Member's first 5 suggestions restart the clock.</li>
+<li>Then the rate-the-choices Vote opens. It stays open for at least a Minimum Life of 3 weeks, and closes once no ballot has changed for a Seasoning Time.</li>
+<li>Conversations still open when the split happens stay with the group they started in, so no Vote disappears.</li>
+</ol>
+<p><strong>What makes a valid split</strong></p>
+<ul>
+<li>About half means each side has between 40% and 60% of the group's Members.</li>
+<li>Each half's circles are next to each other, and each half reaches the edge of the group's territory, so neither half is an island inside the other. The line between the halves runs from one edge of the territory to the other and never closes on itself.</li>
+<li>A group's territory is the area around its Members' spots on the map, not the whole world. For Group A, the edges are drawn around everywhere Members live.</li>
+<li>The software checks each suggestion the moment it is made. If a side has fewer than 40% or more than 60%, or the suggestion puts every Member on the same side as one already listed, it says so at once, for example: “This divides the Members exactly as Choice 3 does.”</li>
+<li>How the software draws the circles and its 2 ways is published with the code, and gives the same answer every time.</li>
+</ul>
+<p><strong>The rate-the-choices Vote</strong></p>
+<ul>
+<li>Each Voter rates the choices 1st, 2nd, 3rd and so on, and gives a written reason with their ballot, as with every Vote.</li>
+<li>Each Voter sees the choices in a different random order, so no choice gains by being first. Nobody has to rate them all.</li>
+<li>If more than 50% of ballots rate the same choice 1st, that choice wins.</li>
+<li>If not, the choice with the fewest 1st ratings is dropped, and each ballot that rated it 1st now counts for its next choice. This repeats until one choice has more than 50%.</li>
+<li>A ballot that rates only some of the choices stops counting once all of its choices are dropped. More than 50% is counted among the ballots still counting.</li>
+<li>There is no Threshold: however many Members Vote, the result stands. The more-than-50% rule takes the place of Approval.</li>
+</ul>
+<p><strong>Each Committee after a split</strong></p>
+<ul>
+<li><strong>Forum Committee:</strong> every group has one. The Initiator chooses which of their own groups a Forum Conversation is for: a Member of AA can choose A or AA, never AB. That is the Conversation's group, and only its Members can be Contactors and Vote. During a Conversation's first week, any Contactor can flag that it is in the wrong group, and the Initiator can move it. Someone who keeps doing it can be raised with the Jury Committee.</li>
+<li><strong>Rules Committee:</strong> the Rules are global, decided by all of A, so no group's Rules can conflict with another's. The one exception is splitting: each group decides its own split.</li>
+<li><strong>Jury Committee:</strong> a Jury Conversation belongs to the group where the trouble happened. Abuse in a Conversation for all of A is judged by all of A; abuse in a Conversation for AA, by AA. A Dismissal applies everywhere.</li>
+</ul>
+<p><strong>Where Members live</strong></p>
+<ul>
+<li>Joining proves the Member's town, postal code and country, from the address on their ID or from a recent bill or statement. Meetinghouse keeps only the town, postal code and country.</li>
+<li>A Member who moves proves their new address the same way and is then moved to the group for their new area.</li>
+<li>If the group they are moving into is in the middle of splitting, they wait until the split is done and then join whichever half they live in.</li>
+</ul>
+
+<h2>Known risks and open decisions</h2>
+<p>The design accepts a few risks that software can't fully remove, and leaves a few choices for later.</p>
+<p><strong>Accepted risks</strong></p>
+<ul>
+<li><strong>Whoever runs the server</strong> could change the code or the database directly. The public code, the code version in the log, and the log's daily fingerprint make that detectable, not impossible.</li>
+<li><strong>The ID-check company</strong> holds Members' ID photos and face templates. Each Member chooses which approved company to trust.</li>
+<li><strong>A Member's email account</strong> is the way back in after losing a device. The 48-hour wait and the “wasn't you?” email give them time to stop a stranger.</li>
+<li><strong>Duplicate people:</strong> the face search should catch most, but no check is perfect. Members can raise suspicions in the Jury.</li>
+</ul>
+<p><strong>Still to decide</strong></p>
+<ul>
+<li>How to pay for ID checks if Meetinghouse grows past the free 500 a month</li>
+<li>Which ID-check companies make the starting list, chosen just before launch</li>
+</ul>
+
+<h2>Status and build order</h2>
+<p>The design is being built in four stages, each tested before the next, and will launch complete before anyone is invited. Stages 1 and 2 are built, and part of stage 3.</p>
+<p><strong>Already built (November 2026)</strong></p>
+<ul>
+<li><strong>Decision rules (stage 1):</strong> Conversations, Questions and Pollsters, Votes with their reasons, the 5-restart limits, Dismissal, and Rules changes within their limits.</li>
+<li><strong>Membership (stage 2):</strong> joining with a passkey, the ID check with a company from the approved list, the yearly selfie, email recovery, and the last-login message. No ID-check company is chosen yet, so joining is paused.</li>
+<li><strong>Part of transparency (stage 3):</strong> everyone can see everything without logging in.</li>
+<li><strong>A practice sandbox</strong> at sandbox.meetinghouse.ai, with pretend Members, started fresh every night.</li>
+<li><strong>Safe updates:</strong> every new version is tested on the server before it goes live.</li>
+</ul>
+<p><strong>Not built yet:</strong> the public log and its fingerprint, the server installing approved software itself, removing the last administrator powers, splitting a group, Stewards and the treasury, Meetinghouse's own duplicate-face check, and the map.</p>
+<p><strong>Build order</strong></p>
+<ol>
+<li><strong>Decision rules:</strong> the three Committees' Votes, Dismissal, Contactors and the Threshold, the 5-restart limits, Discussion, and Rules changes with their limits.</li>
+<li><strong>Membership:</strong> passkey-only joining, the ID check, the yearly selfie, email recovery, the last-login message.</li>
+<li><strong>Transparency:</strong> everyone can see everything, the public log with its fingerprint, the code version, and the server installing approved software.</li>
+<li><strong>The map.</strong></li>
+</ol>
+</article>
+{% endblock %}

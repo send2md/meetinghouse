@@ -139,6 +139,16 @@ code { font-family: "Courier New", monospace; font-size: 0.9em; word-break: brea
 .front .doors .card { text-align: left; }
 .front .or { font-size: 5rem; font-weight: 800; color: var(--accent); line-height: 1; margin: 1.5rem 0; }
 .front .look { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.front .design-link { display: block; margin-top: 1rem; font-size: 1.1rem; }
+.design { max-width: 820px; margin: 1rem auto; line-height: 1.55; }
+.design h2 { margin-top: 2rem; }
+.design table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; font-size: 0.95rem; }
+.design th, .design td { border: 1px solid #d8d2c8; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+.design th { background: #f3efe8; }
+.design td.green { background: #e5f4e4; font-weight: 600; }
+.design .diagram { margin: 1rem 0; overflow-x: auto; }
+.design .diagram svg { width: 100%; min-width: 560px; height: auto; color: #2b2620; }
+@media (max-width: 600px) { .design table { font-size: 0.85rem; } }
 @media (max-width: 760px) { .front { grid-template-columns: 1fr; } .front .sketch { max-width: 360px; margin: 0 auto; } }
 
 @font-face { font-family: "Great Vibes"; src: url("fonts/great-vibes.woff2") format("woff2"); font-display: swap; }
