@@ -140,3 +140,13 @@ code { font-family: "Courier New", monospace; font-size: 0.9em; word-break: brea
 .front .or { font-size: 5rem; font-weight: 800; color: var(--accent); line-height: 1; margin: 1.5rem 0; }
 .front .look { font-size: 2rem; font-weight: 700; color: var(--accent); }
 @media (max-width: 760px) { .front { grid-template-columns: 1fr; } .front .sketch { max-width: 360px; margin: 0 auto; } }
+
+@font-face { font-family: "Great Vibes"; src: url("fonts/great-vibes.woff2") format("woff2"); font-display: swap; }
+.signature { font-family: "Great Vibes", "Snell Roundhand", "Apple Chancery", cursive; font-size: 1.5rem; }
+.front .sketch .signature { display: block; text-align: right; margin-top: 0.4rem; color: var(--ink); text-decoration: none; }
+.front .sketch .signature:hover { text-decoration: underline; }
+.about-art { max-width: 720px; margin: 1rem auto; }
+.about-art img { float: left; width: 240px; height: auto; margin: 0 1.5rem 1rem 0; }
+.about-art p { font-style: italic; line-height: 1.6; }
+.about-art p.signature { text-align: right; font-style: normal; clear: both; }
+@media (max-width: 600px) { .about-art img { float: none; width: 100%; margin: 0 0 1rem; } }

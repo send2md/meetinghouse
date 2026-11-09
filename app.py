@@ -231,6 +231,12 @@ def _OpenByCommittee(now):
     return open_by_subsection
 
 
+@app.route("/about-the-art")
+def AboutTheArt():
+    """Margaret H. Favour's note on the cover drawing. Public, like everything to read."""
+    return render_template("about_art.html")
+
+
 @app.route("/look")
 def LookAround():
     """"Just look around": everyone can see everything, without logging in."""

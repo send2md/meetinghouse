@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}About the cover art — Meetinghouse{% endblock %}
+{% block content %}
+<div class="card about-art">
+  <h1>About Meetinghouse and the cover art</h1>
+  <img src="{{ url_for('static', filename='meetinghouse-sketch.png') }}" alt="A drawing of a meetinghouse, with people gathered inside and the world above them">
+  <p>To portray the inspiration behind Meetinghouse, the use of historical images seems most appropriate. The concepts
+    of Renaissance humanism and classical Greek democracy reinforce the idea of ‘voting’ or the notion that individuals,
+    collectively, are the measure of all things. Figures, from Raphael’s early 16th century fresco, “The School of
+    Athens,” are enclosed by Doric and Ionic Greek architectural orders. By extending the frieze of the Ionic
+    entablature, more of the feminine order is expressed. The image of mother earth defines Meetinghouse’s global
+    potential and asserts its mission to create an environment in which a democratic process of discussion and
+    decision making transcends physical constraints.</p>
+  <p class="signature">… Margaret H. Favour</p>
+  <p><a href="{{ url_for('Dashboard') }}">Back to the front page</a></p>
+</div>
+{% endblock %}

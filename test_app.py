@@ -191,3 +191,12 @@ def test_stored_seasoning_time_follows_the_fixed_value(tmp_path):
     assert house.current_rules[Subsection.FORUM].approval_fraction == 0.63  # voted settings are kept
     reloaded = persistence.LoadHouse(persistence.Connect(str(tmp_path / "old.db")))
     assert reloaded.current_rules[Subsection.FORUM].quiet_time == dt.timedelta(weeks=3)
+
+
+def test_front_page_links_to_the_note_about_the_cover_art(client):
+    test_client, _ = client
+    front = test_client.get("/").data.decode()
+    assert 'href="/about-the-art"' in front and "Margaret H. Favour" in front
+    page = test_client.get("/about-the-art").data.decode()
+    assert "About Meetinghouse and the cover art" in page and "The School of" in page
+    assert "eVote" not in page
