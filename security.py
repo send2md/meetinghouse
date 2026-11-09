@@ -108,7 +108,7 @@ NO_PASSWORD = "!disabled"
 def InitSchema(conn):
     conn.executescript(SCHEMA)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(member_info)")}
-    for column in ("zip", "country"):
+    for column in ("zip", "country", "face_print"):
         if column not in columns:
             conn.execute(f"ALTER TABLE member_info ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     conn.commit()
@@ -422,3 +422,16 @@ def ForgetMember(conn, participant_id):
         (participant_id,),
     )
     conn.commit()
+
+
+def SetFacePrint(conn, participant_id, encoded):
+    conn.execute("UPDATE member_info SET face_print = ? WHERE participant_id = ?", (encoded or "", participant_id))
+    conn.commit()
+
+
+def FacePrints(conn):
+    """{participant id: encoded face print} for everyone with one kept."""
+    return {
+        row[0]: row[1]
+        for row in conn.execute("SELECT participant_id, face_print FROM member_info WHERE face_print != ''")
+    }

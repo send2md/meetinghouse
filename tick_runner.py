@@ -74,6 +74,7 @@ def RunTick(house, conn, now):
     for entry in house.event_log[prev_len:]:
         persistence.LogEvent(conn, entry)
     LogMembershipChanges(house, conn, now)
+    ForgetFacePrints(house, conn, now)
     return closed
 
 
@@ -95,6 +96,27 @@ def LogMembershipChanges(house, conn, now):
                     conn,
                     {"kind": "member_returned", "at": now, "participant_id": participant.id, "jury_topic_id": dismissal.topic_id},
                 )
+
+
+def KeepFacePrint(house, participant_id):
+    """Whether to keep someone's face print. Always for a Member; for someone
+    who left, only while a Jury Conversation about them is open, or a
+    Dismissal decided after they left is still to be served."""
+    participant = house.participants.get(participant_id)
+    if participant is None:
+        return False
+    if not participant.HasLeft():
+        return True
+    if any(t.target_participant_id == participant_id and not t.closed for t in house.topics.values()):
+        return True
+    return any(d.start >= participant.left_at for d in participant.dismissals)
+
+
+def ForgetFacePrints(house, conn, now):
+    """Delete the face prints nothing needs any more (see KeepFacePrint)."""
+    for participant_id in list(security.FacePrints(conn)):
+        if not KeepFacePrint(house, participant_id):
+            security.SetFacePrint(conn, participant_id, "")
 
 
 def CodeVersion():

@@ -32,11 +32,11 @@ def main():
     conn = persistence.Connect(DB_PATH)
     house = persistence.LoadHouse(conn)
     now = UtcNow()
-    persistence.NoteCodeVersion(conn, tick_runner.CodeVersion(), now)
-    closed = tick_runner.RunTick(house, conn, now)
     import security
 
     security.InitSchema(conn)
+    persistence.NoteCodeVersion(conn, tick_runner.CodeVersion(), now)
+    closed = tick_runner.RunTick(house, conn, now)
     tick_runner.SendRenewalReminders(house, conn, now)
     for topic in closed:
         print(f"{topic.subsection.value}: '{topic.title}' closed {topic.result.value}")

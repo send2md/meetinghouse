@@ -35,6 +35,7 @@ from webauthn.helpers.structs import (
 )
 from werkzeug.security import check_password_hash
 
+import facecheck
 import geo
 import idcheck
 import meetinghouse
@@ -63,6 +64,7 @@ TICK_INTERVAL_SECONDS = int(os.environ.get("MEETINGHOUSE_TICK_SECONDS", "300"))
 # Members' verified photos live outside ~/html, next to the SQLite
 # file, and are served through the MemberPhoto route.
 GEO_PATH = os.environ.get("MEETINGHOUSE_GEO", os.path.join(os.path.dirname(DB_PATH), "postal.db"))
+MODELS_DIR = os.environ.get("MEETINGHOUSE_MODELS", os.path.join(os.path.dirname(DB_PATH), "models"))
 UPLOAD_DIR = os.environ.get("MEETINGHOUSE_UPLOADS", os.path.join(os.path.dirname(DB_PATH), "uploads"))
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -590,6 +592,9 @@ def ApplyIdResult(result: idcheck.IdResult):
         with open(path, "wb") as f:
             f.write(result.selfie)
         security.UpdateMember(conn, participant.id, photo_path=path)
+        face_print = _FacePrinter().Print(result.selfie)
+        if face_print is not None:
+            security.SetFacePrint(conn, participant.id, facecheck.Encode(face_print))
     security.UpdateMember(
         conn, participant.id, verified_at=now, verified_country=result.country, verified_ref=result.reference
     )
@@ -899,6 +904,8 @@ def LeaveMeetinghouse():
         FlushNewEvents(prev_len)
     persistence.ForgetPersonalDetails(conn, participant.id)
     security.ForgetMember(conn, participant.id)
+    if not tick_runner.KeepFacePrint(house, participant.id):
+        security.SetFacePrint(conn, participant.id, "")
     if email:
         mailer.Send(
             email,
@@ -1335,6 +1342,18 @@ def Archive():
     query = request.args.get("q", "").strip()
     results = house.SearchArchive(query) if query else []
     return render_template("archive.html", query=query, results=results)
+
+
+# --- Meetinghouse's own duplicate-face check ------------------------------------
+
+_face_printer = None
+
+
+def _FacePrinter():
+    global _face_printer
+    if _face_printer is None or not _face_printer.Available():
+        _face_printer = facecheck.FacePrinter(MODELS_DIR)
+    return _face_printer
 
 
 # --- The map -------------------------------------------------------------------
