@@ -25,6 +25,7 @@ repeated wrong tries.
 from __future__ import annotations
 
 import datetime as dt
+import os
 import secrets
 from typing import Optional
 
@@ -399,3 +400,25 @@ def UseRecoveryCode(conn, participant_id, raw_code, now):
     conn.execute("UPDATE recovery_requests SET state = 'used' WHERE id = ?", (row["id"],))
     conn.commit()
     return "ok"
+
+
+def ForgetMember(conn, participant_id):
+    """A Member left: delete their passkeys, cancel any login recovery, and
+    erase their email address and photo. Their name, town and the record of
+    their ID check (date, country, reference) stay, as the public record does."""
+    RemoveAllPasskeys(conn, participant_id)
+    conn.execute(
+        "UPDATE recovery_requests SET state = 'cancelled' WHERE participant_id = ? AND state = 'waiting'",
+        (participant_id,),
+    )
+    member = GetMember(conn, participant_id)
+    if member is not None and member["photo_path"]:
+        try:
+            os.remove(member["photo_path"])
+        except OSError:
+            pass
+    conn.execute(
+        "UPDATE member_info SET email = '', photo_path = '', reminders_sent = '' WHERE participant_id = ?",
+        (participant_id,),
+    )
+    conn.commit()

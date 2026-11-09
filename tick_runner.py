@@ -85,7 +85,7 @@ def LogMembershipChanges(house, conn, now):
     returned = {(e["data"].get("participant_id"), e["data"].get("jury_topic_id")) for e in persistence.LogEntriesOfKind(conn, "member_returned")}
     for participant in house.participants.values():
         latest = participant.LatestFormDate()
-        if latest is not None and not participant.HasCurrentForm(now):
+        if latest is not None and not participant.HasLeft() and not participant.HasCurrentForm(now):
             due = (latest + dt.timedelta(days=365)).isoformat()
             if (participant.id, due) not in paused:
                 persistence.LogEvent(conn, {"kind": "member_paused", "at": now, "participant_id": participant.id, "due": due})

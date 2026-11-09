@@ -167,3 +167,4 @@ code { font-family: "Courier New", monospace; font-size: 0.9em; word-break: brea
 table.log { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
 table.log th, table.log td { border-bottom: 1px solid #e3ddd3; padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
 table.log td.when { white-space: nowrap; }
+input[type=submit].danger { background: var(--no); }

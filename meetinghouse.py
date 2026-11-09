@@ -275,6 +275,12 @@ class Participant:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     forms: List[ParticipationForm] = field(default_factory=list)
     dismissals: List[Dismissal] = field(default_factory=list)
+    # When they left Meetinghouse, if they did. Leaving is for good; to come
+    # back they join again as a new Member.
+    left_at: Optional[dt.datetime] = None
+
+    def HasLeft(self):
+        return self.left_at is not None
 
     def SignForm(self, signed_date, scan_ref=""):
         """Record a freshly signed participation form."""
@@ -315,7 +321,7 @@ class Participant:
 
     def IsParticipant(self, now):
         """Return whether this person currently holds valid Participant status."""
-        return self.HasCurrentForm(now)
+        return not self.HasLeft() and self.HasCurrentForm(now)
 
     def IsActive(self, now):
         """Return whether this person may currently vote, comment, or author."""
@@ -472,6 +478,41 @@ class Meetinghouse:
         participant = Participant(name=name)
         self.participants[participant.id] = participant
         return participant
+
+    def Leave(self, participant_id, now):
+        """A Member leaves Meetinghouse, for good.
+
+        Their Comments and Votes come off every open Conversation, with no
+        note naming them, and Seasoning Time starts over in each one where
+        they had a Comment or a Vote, so everyone can see the change and
+        respond. That holds even if they had used up their 5.
+
+        A Conversation they started, or attached the Question to, goes on:
+        its Title, opening words and Question stay, under their name.
+        Closed Conversations are untouched. A Jury Conversation about them
+        goes on to its result.
+
+        Returns the open Conversations that changed.
+        """
+        participant = self.participants.get(participant_id)
+        if participant is None or participant.HasLeft():
+            return []
+        participant.left_at = now
+        changed = []
+        for topic in self.topics.values():
+            if topic.closed:
+                continue
+            had_vote = participant_id in topic.votes
+            posts = [post for post in topic.posts if post.participant_id == participant_id]
+            topic.votes.pop(participant_id, None)
+            topic.posts = [post for post in topic.posts if post.participant_id != participant_id]
+            topic.readers.pop(participant_id, None)
+            topic.restarts.pop(participant_id, None)
+            if had_vote or posts:
+                topic.last_activity_at = now
+                changed.append(topic)
+        self._Log("member_left", now, participant_id=participant_id, changed_topic_ids=[t.id for t in changed])
+        return changed
 
     def _RequireActive(self, participant_id, now):
         """Return the named Participant, raising if they may not currently act."""

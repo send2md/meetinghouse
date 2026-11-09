@@ -181,7 +181,7 @@ def LoadCurrentParticipant():
     participant_id = session.get("participant_id")
     if participant_id and participant_id in house.participants:
         g.participant = house.participants[participant_id]
-        if g.participant.IsDismissed(Now()):  # dismissed while logged in: gone at once
+        if g.participant.IsDismissed(Now()) or g.participant.HasLeft():  # gone at once
             session.pop("participant_id", None)
             g.participant = None
 
@@ -311,6 +311,8 @@ def _LoginBlockedReason(participant):
     """
     if participant is None:
         return "That account no longer exists."
+    if participant.HasLeft():
+        return "This Member left Meetinghouse. To come back, join again as a new Member."
     dismissal = participant.CurrentDismissal(Now())
     if dismissal is not None:
         end = dismissal.end
@@ -685,6 +687,8 @@ def MemberPhoto(participant_id):
     """A member's verified selfie. Public, like their name."""
     if participant_id not in house.participants:
         abort(404)
+    if house.participants[participant_id].HasLeft():
+        return send_file(os.path.join(app.static_folder, "left-meetinghouse.svg"), mimetype="image/svg+xml")
     path = security.GetMember(conn, participant_id)["photo_path"]
     if not path or not os.path.isfile(path):
         abort(404)
@@ -867,6 +871,47 @@ def Account():
         renew_by=(latest + dt.timedelta(days=365)) if latest else None,
         paused=security.IsActivated(conn, participant_id) and not g.participant.IsParticipant(Now()),
         providers=idcheck.GetProviders(),
+    )
+
+
+@app.route("/account/leave", methods=["GET", "POST"])
+def LeaveMeetinghouse():
+    """Leave Meetinghouse for good (see the design's "Leaving Meetinghouse")."""
+    guard = RequireLogin()
+    if guard:
+        return guard
+    participant = g.participant
+    if request.method == "GET":
+        return render_template("leave.html")
+    if request.form.get("confirm") != "yes":
+        flash("Please tick the box to confirm that you want to leave.")
+        return redirect(url_for("LeaveMeetinghouse"))
+    now = Now()
+    email = (security.GetMember(conn, participant.id) or {"email": ""})["email"]
+    with LOCK:
+        prev_len = len(house.event_log)
+        changed = house.Leave(participant.id, now)
+        persistence.SaveParticipant(conn, participant)
+        for topic in changed:
+            persistence.SaveTopic(conn, topic)
+        FlushNewEvents(prev_len)
+    persistence.ForgetPersonalDetails(conn, participant.id)
+    security.ForgetMember(conn, participant.id)
+    if email:
+        mailer.Send(
+            email,
+            "You have left Meetinghouse",
+            f"Dear {participant.name},\n\nYou have left Meetinghouse. Your Comments and Votes came off every open "
+            "Conversation, and your email address, photo and passkeys have been deleted. Your Comments and Votes in "
+            "closed Conversations stay on the record under your name.\n\n"
+            f"You're welcome back any time: join again at {_SiteAddress()}.\n\nMeetinghouse",
+        )
+    session.clear()
+    return render_template(
+        "message.html",
+        title="You have left Meetinghouse",
+        text="Your Comments and Votes came off every open Conversation, and your email address, photo and passkeys "
+        "have been deleted. You're welcome back any time: join again as a new Member.",
     )
 
 
@@ -1337,6 +1382,8 @@ def _DescribeLogEntry(entry, now):
         text = f"{who} was dismissed by the Jury for {d.get('duration_days')} days"
     elif kind == "member_returned":
         text = f"{who} came back at the end of their Dismissal"
+    elif kind == "member_left":
+        text = f"{who} left Meetinghouse"
     elif kind == "member_joined":
         text = f"{who} joined"
     elif kind == "member_renewed":
@@ -1435,7 +1482,9 @@ def Admin():
     participants = sorted(house.participants.values(), key=lambda p: p.name)
     status = {}
     for p in participants:
-        if not security.IsActivated(conn, p.id):
+        if p.HasLeft():
+            status[p.id] = "left"
+        elif not security.IsActivated(conn, p.id):
             latest = security.LatestIdSession(conn, p.id, idcheck.JOIN)
             status[p.id] = "joining" + (f" (ID check {latest['status']})" if latest else "")
         elif not p.IsParticipant(now):

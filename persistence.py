@@ -124,6 +124,9 @@ def Connect(path):
     for column, kind in _TOPIC_COLUMNS_ADDED.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE topics ADD COLUMN {column} {kind}")
+    participant_columns = {row["name"] for row in conn.execute("PRAGMA table_info(participants)")}
+    if "left_at" not in participant_columns:
+        conn.execute("ALTER TABLE participants ADD COLUMN left_at TEXT")
     log_columns = {row["name"] for row in conn.execute("PRAGMA table_info(event_log)")}
     for column in ("prev_hash", "hash"):
         if column not in log_columns:
@@ -358,14 +361,21 @@ def SaveParticipant(conn, participant: Participant):
     """Persist the full current state of one Participant."""
     conn.execute(
         """
-        INSERT INTO participants (id, name, forms_json, dismissals_json)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO participants (id, name, forms_json, dismissals_json, left_at)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             forms_json = excluded.forms_json,
-            dismissals_json = excluded.dismissals_json
+            dismissals_json = excluded.dismissals_json,
+            left_at = excluded.left_at
         """,
-        (participant.id, participant.name, _FormsToJson(participant.forms), _DismissalsToJson(participant.dismissals)),
+        (
+            participant.id,
+            participant.name,
+            _FormsToJson(participant.forms),
+            _DismissalsToJson(participant.dismissals),
+            _Iso(participant.left_at),
+        ),
     )
     conn.commit()
 
@@ -564,6 +574,14 @@ def GetCredentialsByUsername(conn, username: str) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM credentials WHERE username = ?", (username,)).fetchone()
 
 
+def ForgetPersonalDetails(conn, participant_id: str):
+    """Erase what lets a departed Member log in or be reached: their user name
+    and password, and any old sign-up profile. Their name stays on the record."""
+    conn.execute("DELETE FROM credentials WHERE participant_id = ?", (participant_id,))
+    conn.execute("DELETE FROM participant_profiles WHERE participant_id = ?", (participant_id,))
+    conn.commit()
+
+
 def GetCredentialsForParticipant(conn, participant_id: str) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM credentials WHERE participant_id = ?", (participant_id,)).fetchone()
 
@@ -663,6 +681,7 @@ def LoadHouse(conn) -> Meetinghouse:
             id=row["id"],
             forms=_FormsFromJson(row["forms_json"]),
             dismissals=_DismissalsFromJson(row["dismissals_json"]),
+            left_at=_ParseDateTime(row["left_at"]),
         )
         house.participants[participant.id] = participant
 

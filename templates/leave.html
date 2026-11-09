@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Leave Meetinghouse — Meetinghouse{% endblock %}
+{% block content %}
+<div class="card" style="max-width:600px;margin:2rem auto;">
+  <h1>Leave Meetinghouse</h1>
+  <p>You can leave at any time. This is what happens:</p>
+  <ul>
+    <li>Your Comments and Votes come off every open Conversation, with no note naming you. Seasoning Time starts over in each one where you had a Comment or a Vote, so everyone can see the change.</li>
+    <li>A Conversation you started, or attached the Question to, goes on: its Title, opening words and Question stay, under your name.</li>
+    <li>Your Comments and Votes in closed Conversations stay on the record under your name, because the Meeting's decisions rest on them. A plain “left Meetinghouse” picture takes the place of your photo.</li>
+    <li>Your email address, photo and passkeys are deleted, and you can't log in again.</li>
+    <li>A Jury Conversation about you, if there is one, goes on to its result.</li>
+    <li>You can come back later by joining again, with a new ID check.</li>
+  </ul>
+  <form method="post">
+    <label class="check"><input type="checkbox" name="confirm" value="yes"> I understand, and I want to leave Meetinghouse.</label>
+    <p><input type="submit" class="danger" value="Leave Meetinghouse"> <a href="{{ url_for('Account') }}">Cancel</a></p>
+  </form>
+</div>
+{% endblock %}
