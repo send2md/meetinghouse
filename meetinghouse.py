@@ -174,6 +174,10 @@ class InvalidTopic(MeetinghouseError):
     """Raised when a Topic is created without the fields its subsection requires."""
 
 
+class NotInGroup(InvalidTopic):
+    """Raised when someone outside a Conversation's group tries to take part in it."""
+
+
 class InvalidRuleChange(InvalidTopic):
     """Raised when a proposed Rules change is out of bounds or too big a step."""
 
@@ -414,6 +418,13 @@ class Topic:
     # A same-person check: "Is target_participant_id (joining) the same person
     # as same_as_id?" Yes / No / "I can't tell" (stored as ABSTAIN).
     same_as_id: Optional[str] = None
+    # The group a Conversation belongs to: "A" is all of Meetinghouse; after a
+    # split, "AA" and "AB" are its halves, and so on. Only the group's Members
+    # can be its Contactors and Vote. A split Conversation ("Should Group X
+    # split?") names the group in split_group.
+    group: str = "A"
+    split_group: Optional[str] = None
+    group_flags: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         if self.last_activity_at is None:
@@ -481,6 +492,32 @@ class Meetinghouse:
         self.topics: Dict[str, Topic] = {}
         self.current_rules: Dict[Subsection, RuleConfig] = rules or DefaultRules()
         self.event_log: List[dict] = []
+        # Which group each Member is in (their own smallest group); "A" if not listed.
+        self.member_groups: Dict[str, str] = {}
+
+    # --- Groups -------------------------------------------------------------------
+
+    def GroupOf(self, participant_id):
+        return self.member_groups.get(participant_id, "A")
+
+    def InGroup(self, participant_id, group):
+        """A Member belongs to their own group and every group above it."""
+        return self.GroupOf(participant_id).startswith(group or "A")
+
+    def GroupsOf(self, participant_id):
+        """Every group this Member belongs to, the whole Meetinghouse first."""
+        own = self.GroupOf(participant_id)
+        return [own[:n] for n in range(1, len(own) + 1)]
+
+    def _RequireInGroup(self, topic, participant_id):
+        if not self.InGroup(participant_id, topic.group):
+            raise NotInGroup(f"This Conversation is for Group {topic.group}; only its Members can take part.")
+
+    def OpenSplitTopicFor(self, group):
+        for topic in self.topics.values():
+            if not topic.closed and topic.split_group == group:
+                return topic
+        return None
 
     def RegisterParticipant(self, name):
         """Create and track a new Participant, with no signed form yet."""
@@ -592,11 +629,31 @@ class Meetinghouse:
         target_participant_id=None,
         proposed_change=None,
         software_ref=None,
+        group="A",
+        split_group=None,
     ):
         """Author a new Topic, enforcing each subsection's required fields."""
         author = self._RequireActive(author_id, now)
+        group = group or "A"
+        if not self.InGroup(author.id, group):
+            raise NotInGroup(f"You can start a Conversation only in your own groups, not Group {group}.")
 
-        if subsection is Subsection.RULES:
+        if subsection is Subsection.RULES and split_group:
+            # "Should Group X split?" Each group decides its own split.
+            if not self.InGroup(author.id, split_group):
+                raise NotInGroup(f"Only Members of Group {split_group} can propose splitting it.")
+            existing = self.OpenSplitTopicFor(split_group)
+            if existing is not None:
+                raise DuplicateTopic(
+                    f"There's already an open Conversation about splitting Group {split_group} — join that one instead.",
+                    existing.id,
+                )
+            group = split_group
+            title = f"Should Group {split_group} split?"
+            poll_question = f"Do we split Group {split_group} into two groups?"
+            proposed_change = software_ref = None
+        elif subsection is Subsection.RULES:
+            group = "A"  # the Rules are global, decided by all of Meetinghouse
             if (proposed_change is None) == (not software_ref):
                 raise InvalidTopic(
                     "A Rules Conversation either changes one setting or approves a software change."
@@ -650,9 +707,11 @@ class Meetinghouse:
             software_ref=software_ref or None,
             pollster_id=author.id if poll_question else None,
             question_attached_at=now if poll_question else None,
+            group=group,
+            split_group=split_group if subsection is Subsection.RULES else None,
         )
         self.topics[topic.id] = topic
-        self._Log("topic_created", now, topic_id=topic.id, author_id=author.id)
+        self._Log("topic_created", now, topic_id=topic.id, author_id=author.id, group=group)
         self.MarkRead(topic.id, author.id, now)
         return topic
 
@@ -694,6 +753,34 @@ class Meetinghouse:
         self._Log("topic_created", now, topic_id=topic.id, author_id=MEETINGHOUSE_ID, same_person=True)
         return topic
 
+    def FlagWrongGroup(self, topic_id, participant_id, now):
+        """A Contactor says this Conversation is in the wrong group (first week only)."""
+        topic = self._GetOpenTopic(topic_id)
+        if now - topic.created_at > dt.timedelta(weeks=1):
+            raise InvalidTopic("A Conversation can be flagged as being in the wrong group only during its first week.")
+        if participant_id not in topic.readers:
+            raise InvalidTopic("Only its Contactors can flag a Conversation.")
+        if participant_id not in topic.group_flags:
+            topic.group_flags.append(participant_id)
+            self._Log("group_flagged", now, topic_id=topic_id, participant_id=participant_id)
+
+    def MoveToGroup(self, topic_id, participant_id, group, now):
+        """The Initiator moves a flagged Forum or Jury Conversation to another of their own groups (first week only)."""
+        topic = self._GetOpenTopic(topic_id)
+        if participant_id != topic.author_id:
+            raise InvalidTopic("Only the Initiator can move a Conversation to another group.")
+        if topic.subsection is Subsection.RULES:
+            raise InvalidTopic("Rules Conversations belong to all of Meetinghouse.")
+        if now - topic.created_at > dt.timedelta(weeks=1):
+            raise InvalidTopic("A Conversation can be moved only during its first week.")
+        if not self.InGroup(participant_id, group):
+            raise NotInGroup(f"You can move it only to one of your own groups, not Group {group}.")
+        old = topic.group
+        topic.group = group
+        topic.group_flags = []
+        topic.last_activity_at = now  # everyone in the new group gets a full Seasoning Time
+        self._Log("topic_moved", now, topic_id=topic_id, from_group=old, to_group=group)
+
     def MarkRead(self, topic_id, participant_id, now):
         """Record that the given Participant has read this Topic.
 
@@ -705,6 +792,8 @@ class Meetinghouse:
             return False
         if topic.same_as_id and participant_id in (topic.target_participant_id, topic.same_as_id):
             return False  # the two people it's about aren't its Contactors
+        if not self.InGroup(participant_id, topic.group):
+            return False  # only the group's Members are its Contactors
         topic.readers[participant_id] = now
         return True
 
@@ -721,6 +810,7 @@ class Meetinghouse:
         if topic.HasPoll():
             raise InvalidTopic("This Conversation already has its Question. There can be only one.")
         self._RequireActive(participant_id, now)
+        self._RequireInGroup(topic, participant_id)
         topic.readers.setdefault(participant_id, now)
         topic.poll_question = question.strip()
         topic.pollster_id = participant_id
@@ -753,6 +843,7 @@ class Meetinghouse:
         self._RequireActive(participant_id, now)
         if topic.same_as_id and participant_id in (topic.target_participant_id, topic.same_as_id):
             raise InvalidTopic("This Conversation is about you, so it's for the rest of the Meeting to decide.")
+        self._RequireInGroup(topic, participant_id)
 
         topic.readers.setdefault(participant_id, now)
         record = VoteRecord(
@@ -792,6 +883,7 @@ class Meetinghouse:
             raise InvalidTopic("A Comment can't be empty.")
         topic = self._GetOpenTopic(topic_id)
         self._RequireActive(participant_id, now)
+        self._RequireInGroup(topic, participant_id)
         topic.readers.setdefault(participant_id, now)
 
         earlier = next(
@@ -836,7 +928,7 @@ class Meetinghouse:
         readers = set()
         for participant_id in topic.readers:
             participant = self.participants.get(participant_id)
-            if participant is None or participant.IsDismissed(now):
+            if participant is None or participant.IsDismissed(now) or not self.InGroup(participant_id, topic.group):
                 continue
             if participant.IsParticipant(now) or topic.CurrentVote(participant_id) is not None:
                 readers.add(participant_id)
@@ -850,7 +942,7 @@ class Meetinghouse:
             if record is None:
                 continue
             participant = self.participants.get(participant_id)
-            if participant is None or participant.IsDismissed(now):
+            if participant is None or participant.IsDismissed(now) or not self.InGroup(participant_id, topic.group):
                 continue
             counts[record.choice] += 1
         return counts

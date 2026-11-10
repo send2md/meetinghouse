@@ -92,6 +92,11 @@ CREATE TABLE IF NOT EXISTS topics (
     last_activity_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS member_groups (
+    participant_id TEXT PRIMARY KEY,
+    group_name TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS event_log (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,
@@ -113,6 +118,9 @@ _TOPIC_COLUMNS_ADDED = {
     "question_attached_at": "TEXT",
     "asked_to_vote_json": "TEXT NOT NULL DEFAULT '[]'",
     "same_as_id": "TEXT",
+    "group_name": "TEXT NOT NULL DEFAULT 'A'",
+    "split_group": "TEXT",
+    "group_flags_json": "TEXT NOT NULL DEFAULT '[]'",
 }
 
 
@@ -390,8 +398,8 @@ def SaveTopic(conn, topic: Topic):
             rules_json, target_subsection, target_participant_id, proposed_rule_config_json,
             readers_json, votes_json, closed, closed_at, result, last_activity_at,
             software_ref, posts_json, restarts_json, dismissal_notes_json, dismissal_effects_json,
-            pollster_id, question_attached_at, asked_to_vote_json, same_as_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            pollster_id, question_attached_at, asked_to_vote_json, same_as_id, group_name, split_group, group_flags_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
@@ -399,6 +407,8 @@ def SaveTopic(conn, topic: Topic):
             pollster_id = excluded.pollster_id,
             question_attached_at = excluded.question_attached_at,
             asked_to_vote_json = excluded.asked_to_vote_json,
+            group_name = excluded.group_name,
+            group_flags_json = excluded.group_flags_json,
             readers_json = excluded.readers_json,
             votes_json = excluded.votes_json,
             posts_json = excluded.posts_json,
@@ -437,6 +447,9 @@ def SaveTopic(conn, topic: Topic):
             _Iso(topic.question_attached_at),
             json.dumps(topic.asked_to_vote),
             topic.same_as_id,
+            topic.group,
+            topic.split_group,
+            json.dumps(topic.group_flags),
         ),
     )
     conn.commit()
@@ -574,6 +587,15 @@ def SetCredentials(conn, participant_id: str, username: str, password_hash: str)
 
 def GetCredentialsByUsername(conn, username: str) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM credentials WHERE username = ?", (username,)).fetchone()
+
+
+def SetMemberGroup(conn, participant_id, group):
+    conn.execute(
+        "INSERT INTO member_groups (participant_id, group_name) VALUES (?, ?) "
+        "ON CONFLICT(participant_id) DO UPDATE SET group_name = excluded.group_name",
+        (participant_id, group),
+    )
+    conn.commit()
 
 
 def ForgetPersonalDetails(conn, participant_id: str):
@@ -715,8 +737,14 @@ def LoadHouse(conn) -> Meetinghouse:
             question_attached_at=_ParseDateTime(row["question_attached_at"]),
             asked_to_vote=json.loads(row["asked_to_vote_json"] or "[]"),
             same_as_id=row["same_as_id"],
+            group=row["group_name"] or "A",
+            split_group=row["split_group"],
+            group_flags=json.loads(row["group_flags_json"] or "[]"),
         )
         house.topics[topic.id] = topic
+
+    for row in conn.execute("SELECT participant_id, group_name FROM member_groups"):
+        house.member_groups[row["participant_id"]] = row["group_name"]
 
     for subsection, rule in house.current_rules.items():
         if subsection not in rules:
