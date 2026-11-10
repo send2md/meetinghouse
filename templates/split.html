@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Splitting Group {{ split.group_name }} — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Splitting Group {{ split.group_name }}</h1>
+<p class="muted">Map frozen {{ split.frozen_at|day }} with {{ split.spots|length }} Members placed · <a href="{{ url_for('GroupsPage') }}">all groups</a>
+  {% if topic %} · <a href="{{ url_for('TopicDetail', topic_id=topic.id) }}">the Conversation that decided it</a>{% endif %}</p>
+
+<div class="card question">
+  {% if split.phase == 'deciding' %}
+    <h2>Deciding whether to split</h2>
+    <p>The Members of Group {{ split.group_name }} are Voting in <a href="{{ url_for('TopicDetail', topic_id=split.topic_id) }}">the Conversation</a>.
+      The map is frozen meanwhile: new Members can still join, and are placed in a half once the split is done.</p>
+  {% elif split.phase == 'suggesting' %}
+    <h2>Suggest a way to split</h2>
+    <p>The software drew a circle around each concentration of Members and proposed {{ choices|length }} way{{ 's' if choices|length != 1 }} to split.
+      Any Member of Group {{ split.group_name }} can suggest another, by choosing which circles go in each half. Suggestions stay open until none
+      has come in for {{ seasoning.days // 7 }} weeks{% if split.last_change %} (now at least until {{ (split.last_change + seasoning)|day }}){% endif %}.</p>
+  {% elif split.phase == 'rating' %}
+    <h2>Rate the ways to split</h2>
+    <p>Give your first choice 1, your second 2, and so on. You don't have to rate them all. The Vote stays open until at least
+      {{ (split.voting_started + minimum_life)|day }}, and closes once no ballot has changed for {{ seasoning.days // 7 }} weeks. There's no Threshold.</p>
+  {% elif split.phase == 'done' %}
+    <h2>Group {{ split.group_name }} has split</h2>
+    <p>{% for name, size in split.result.sizes.items() %}Group {{ name }}: {{ size }} Members{{ " · " if not loop.last }}{% endfor %}.
+      The winning way was Choice {{ numbers.get(split.result.winner) }}.</p>
+  {% else %}
+    <h2>Group {{ split.group_name }} did not split</h2>
+  {% endif %}
+</div>
+
+{% if circles %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<div id="split-map" class="member-map" role="img" aria-label="The circles of Members"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  (function () {
+    if (!window.L) return;
+    var circles = {{ circles|tojson }};
+    var map = L.map("split-map", { scrollWheelZoom: false });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 12,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+    var layers = [];
+    circles.forEach(function (c, i) {
+      var layer = L.circle([c.lat, c.lon], { radius: c.radius_km * 1000, color: "#7a5a2e", weight: 1, fillOpacity: 0.25 })
+        .bindTooltip("Circle " + (i + 1) + " · " + c.count + " Members" + (c.towns.length ? " · " + c.towns.join(", ") : ""), { permanent: false })
+        .addTo(map);
+      layers.push(layer);
+    });
+    map.fitBounds(L.featureGroup(layers).getBounds(), { padding: [30, 30] });
+  })();
+</script>
+<div class="card">
+  <h3>The circles</h3>
+  <table>
+    <tr><th>Circle</th><th>Members</th><th>Towns</th></tr>
+    {% for c in circles %}<tr><td>{{ loop.index }}</td><td>{{ c.count }}</td><td>{{ c.towns|join(", ") or "—" }}</td></tr>{% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if choices %}
+<div class="card">
+  <h3>The ways to split</h3>
+  {% for c in choices %}
+  <div class="comment">
+    <div class="meta">Choice {{ c.number }} · {{ c.label }}{% if c.author_id %} ({{ c.by }}){% endif %}</div>
+    {% for side in c.sides %}
+    <p><strong>{{ "One half" if loop.first else "The other half" }}</strong>: {{ side.members }} Members · circles {% for i in side.circles %}{{ i + 1 }}{{ ", " if not loop.last }}{% endfor %}{% if side.towns %} · {{ side.towns|join(", ") }}{% endif %}</p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if split.phase == 'suggesting' and is_member %}
+<div class="card">
+  <h3>Suggest another way</h3>
+  <form method="post" action="{{ url_for('SplitSuggest', split_id=split.id) }}">
+    <p class="muted">Tick the circles for one half; the rest make the other half. Each half needs 40% to 60% of the Members, its circles next to each other, and to reach the edge of the group's area.</p>
+    {% for c in circles %}
+    <label class="check"><input type="checkbox" name="first" value="{{ loop.index0 }}"> Circle {{ loop.index }} · {{ c.count }} Members{% if c.towns %} · {{ c.towns|join(", ") }}{% endif %}</label>
+    {% endfor %}
+    <p><input type="submit" value="Suggest this way"></p>
+  </form>
+</div>
+{% endif %}
+
+{% if split.phase == 'rating' and is_member %}
+<div class="card">
+  <h3>Your Vote{% if my_ballot %} <span class="muted">(Voting again replaces it)</span>{% endif %}</h3>
+  <form method="post" action="{{ url_for('SplitBallot', split_id=split.id) }}">
+    <table>
+      {% for c in choices %}
+      <tr><td>Choice {{ c.number }}</td><td>
+        <select name="rank_{{ c.id }}" aria-label="Your rating for Choice {{ c.number }}">
+          <option value="">—</option>
+          {% for n in range(1, choices|length + 1) %}
+          <option value="{{ n }}" {% if my_ballot and c.id in my_ballot.ranking and my_ballot.ranking.index(c.id) + 1 == n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select></td></tr>
+      {% endfor %}
+    </table>
+    <label>What is your reason?</label>
+    <textarea name="reason" required>{{ my_ballot.reason if my_ballot else '' }}</textarea>
+    <p><input type="submit" value="Vote"> <span class="muted">Your Votes can keep this Vote open {{ restarts_left }} more time{{ 's' if restarts_left != 1 }}.</span></p>
+  </form>
+</div>
+{% endif %}
+
+{% if split.phase == 'done' and split.result.rounds %}
+<div class="card">
+  <h3>The count, round by round</h3>
+  {% for r in split.result.rounds %}
+  <p><strong>Round {{ loop.index }}</strong> ({{ r.counting }} ballot{{ 's' if r.counting != 1 }} counting):
+    {% for cid, n in r.counts.items() %}Choice {{ numbers.get(cid) }} {{ n }}{{ " · " if not loop.last }}{% endfor %}
+    {% if r.dropped %}— <em>Choice {{ numbers.get(r.dropped) }} dropped</em>{% endif %}</p>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if ballots %}
+<div class="card">
+  <h3>Ballots</h3>
+  {% for b in ballots %}
+  <div class="comment"><div class="meta">{{ b.name }} · {{ b.at|fmt }}</div>
+    <p>{% for cid in b.ranking %}{{ loop.index }}. Choice {{ numbers.get(cid) }}{{ " · " if not loop.last }}{% endfor %}</p>
+    <p class="prewrap">{{ b.reason }}</p></div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

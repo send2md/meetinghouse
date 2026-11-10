@@ -36,7 +36,10 @@ def main():
 
     security.InitSchema(conn)
     persistence.NoteCodeVersion(conn, tick_runner.CodeVersion(), now)
-    closed = tick_runner.RunTick(house, conn, now)
+    import geo
+
+    geo_path = os.environ.get("MEETINGHOUSE_GEO", os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "postal.db"))
+    closed = tick_runner.RunTick(house, conn, now, tick_runner.SpotFinder(conn, geo.Locator(geo_path)))
     tick_runner.SendRenewalReminders(house, conn, now)
     for topic in closed:
         print(f"{topic.subsection.value}: '{topic.title}' closed {topic.result.value}")

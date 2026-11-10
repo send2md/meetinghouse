@@ -12,6 +12,15 @@
 
 <div class="card">
   <form method="post">
+    {% if subsection.value != "Rules" and my_groups|length > 1 %}
+      <label>Which group is this for?</label>
+      <select name="group">
+        {% for grp in my_groups %}
+          <option value="{{ grp }}" {% if form.get('group') == grp %}selected{% endif %}>Group {{ grp }}{% if grp == 'A' %} (all of Meetinghouse){% endif %}</option>
+        {% endfor %}
+      </select>
+      <p class="muted">Only that group's Members can take part. {% if subsection.value == "Jury" %}Choose the group where the trouble happened; a Dismissal applies everywhere.{% else %}Choose the smallest group the matter concerns.{% endif %}</p>
+    {% endif %}
     {% if subsection.value == "Jury" %}
       <label>Member this concerns</label>
       <select name="target_participant_id" required>

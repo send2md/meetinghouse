@@ -25,6 +25,7 @@
       {% endif %}
       <a href="{{ url_for('CurrentRules') }}" class="{{ 'active' if ep == 'CurrentRules' }}">Current Rules</a>
       <a href="{{ url_for('MemberMap') }}" class="{{ 'active' if ep == 'MemberMap' }}">Map</a>
+      <a href="{{ url_for('GroupsPage') }}" class="{{ 'active' if ep in ('GroupsPage', 'SplitPage') }}">Groups</a>
       <a href="{{ url_for('PublicLog') }}" class="{{ 'active' if ep == 'PublicLog' }}">Log</a>
       {% if current_participant %}
       <a href="{{ url_for('Account') }}" class="{{ 'active' if ep == 'Account' }}">Account</a>

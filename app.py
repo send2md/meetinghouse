@@ -37,6 +37,7 @@ from werkzeug.security import check_password_hash
 
 import facecheck
 import geo
+import groups
 import idcheck
 import meetinghouse
 import mailer
@@ -93,6 +94,7 @@ def Now():
 
 security.InitSchema(conn)
 stewards.InitSchema(conn)
+groups.InitSchema(conn)
 security.EnsureStatusRows(conn, house, Now())
 persistence.ForgetRetiredProfileFields(conn)
 
@@ -106,7 +108,7 @@ def FlushNewEvents(prev_len):
 def RunTick():
     """Close every eligible Conversation and persist the resulting changes."""
     with LOCK:
-        closed = tick_runner.RunTick(house, conn, Now())
+        closed = tick_runner.RunTick(house, conn, Now(), _SpotOf)
         tick_runner.SendRenewalReminders(house, conn, Now())
         return closed
 
@@ -632,7 +634,7 @@ def _CheckFaceThenAdmit(participant, purpose, now):
         if security.GetFaceReview(conn, participant.id) is not None:
             review = security.GetFaceReview(conn, participant.id)
             security.SetFaceReview(conn, participant.id, review["matched_id"], 0.0, "admitted", now)
-        tick_runner.AdmitMember(house, conn, participant, now, extra="Your ID check passed. ")
+        tick_runner.AdmitMember(house, conn, participant, now, extra="Your ID check passed. ", spot_of=_SpotOf)
         return
     match_id, similarity = matches[0]
     if purpose == idcheck.JOIN:
@@ -1096,6 +1098,7 @@ def NewTopic(name):
             subsection=subsection,
             participants=_JuryChoices(),
             settings=_SettingChoices(),
+            my_groups=house.GroupsOf(g.participant.id),
             form=request.form,
             **extra,
         )
@@ -1139,6 +1142,7 @@ def NewTopic(name):
                     target_participant_id=target_participant_id,
                     proposed_change=proposed_change,
                     software_ref=software_ref,
+                    group=request.form.get("group") or "A" if subsection is not Subsection.RULES else "A",
                 )
                 persistence.SaveTopic(conn, topic)
                 FlushNewEvents(prev_len)
@@ -1241,10 +1245,15 @@ def TopicDetail(topic_id):
     entries.sort(key=lambda e: e["at"])
 
     my_vote = topic.CurrentVote(member.id) if topic.HasPoll() and member else None
-    can_act = member is not None and member.IsActive(now) and not topic.closed
+    can_act = member is not None and member.IsActive(now) and not topic.closed and house.InGroup(member.id, topic.group)
+    first_week = not topic.closed and now - topic.created_at <= dt.timedelta(weeks=1) and topic.subsection is not Subsection.RULES
     return render_template(
         "topic.html",
         topic=topic,
+        split=groups.SplitForTopic(conn, topic.id) if topic.split_group else None,
+        can_flag=first_week and member is not None and member.id in topic.readers and member.id not in topic.group_flags and member.id != topic.author_id,
+        can_move=first_week and member is not None and member.id == topic.author_id,
+        move_choices=[grp for grp in house.GroupsOf(member.id) if grp != topic.group] if member else [],
         entries=entries,
         my_vote=my_vote,
         counts=house.EffectiveVoteCounts(topic, now) if topic.HasPoll() else None,
@@ -1414,6 +1423,10 @@ def _Locator():
     if _locator is None or (not _locator.Available() and os.path.exists(GEO_PATH)):
         _locator = geo.Locator(GEO_PATH)
     return _locator
+
+
+def _SpotOf(participant_id):
+    return tick_runner.SpotFinder(conn, _Locator())(participant_id)
 
 
 def _MapDots(now):
@@ -1601,6 +1614,172 @@ def StewardThanks():
     return redirect(url_for("Dashboard"))
 
 
+# --- Groups and splitting ---------------------------------------------------------
+
+
+def _CircleLabel(circle):
+    towns = sorted({(security.GetMember(conn, pid) or {"town": ""})["town"].strip() for pid in circle["members"]} - {""})
+    return {"towns": towns, "count": len(circle["members"]), "lat": circle["lat"], "lon": circle["lon"], "radius_km": circle["radius_km"]}
+
+
+@app.route("/groups")
+def GroupsPage():
+    """Every group, how many Members it has, and any split under way. Public."""
+    now = Now()
+    all_groups = groups.Groups(house)
+    rows = []
+    for name, members in all_groups.items():
+        active = groups.ActiveMembers(house, conn, name, now)
+        rows.append({
+            "name": name,
+            "members": len(active),
+            "can_propose": g.participant is not None and groups.CanProposeSplit(house, conn, name, g.participant.id, now) is None,
+            "why_not": groups.CanProposeSplit(house, conn, name, g.participant.id, now) if g.participant else None,
+            "mine": g.participant is not None and house.InGroup(g.participant.id, name),
+        })
+    return render_template(
+        "groups.html",
+        rows=rows,
+        splits=groups.Splits(conn),
+        my_group=house.GroupOf(g.participant.id) if g.participant else None,
+        min_members=groups.MIN_MEMBERS,
+    )
+
+
+@app.route("/groups/<name>/split", methods=["POST"])
+def ProposeSplit(name):
+    guard = RequireLogin()
+    if guard:
+        return guard
+    now = Now()
+    why_not = groups.CanProposeSplit(house, conn, name, g.participant.id, now)
+    if why_not:
+        flash(why_not)
+        return redirect(url_for("GroupsPage"))
+    try:
+        with LOCK:
+            prev_len = len(house.event_log)
+            topic = house.CreateTopic(
+                g.participant.id, Subsection.RULES, None, now,
+                description=request.form.get("description", "").strip() or None, split_group=name,
+            )
+            persistence.SaveTopic(conn, topic)
+            FlushNewEvents(prev_len)
+            groups.StartDeciding(house, conn, topic, now, _SpotOf)
+    except MeetinghouseError as exc:
+        flash(str(exc))
+        return redirect(url_for("GroupsPage"))
+    return redirect(url_for("TopicDetail", topic_id=topic.id))
+
+
+@app.route("/split/<split_id>")
+def SplitPage(split_id):
+    now = Now()
+    split = groups.Split(conn, split_id)
+    if split is None:
+        abort(404)
+    circles = [_CircleLabel(c) for c in split["circles"]]
+    choices = []
+    for n, choice in enumerate(groups.Choices(conn, split_id), start=1):
+        sides = groups.HalfSummary(split["circles"], choice["first_half"])
+        for side in sides:
+            side["towns"] = sorted({t for i in side["circles"] for t in circles[i]["towns"]})
+        choices.append(dict(choice, number=n, sides=sides, by=participant_name_or_software(choice["author_id"])))
+    me = g.participant.id if g.participant else None
+    is_member = me is not None and me in groups.ActiveMembers(house, conn, split["group_name"], now)
+    ballots = [dict(b, name=house.participants[b["participant_id"]].name if b["participant_id"] in house.participants else "(unknown)")
+               for b in groups.Ballots(conn, split_id)]
+    my_ballot = next((b for b in ballots if b["participant_id"] == me), None)
+    numbers = {c["id"]: c["number"] for c in choices}
+    return render_template(
+        "split.html", split=split, circles=circles, choices=choices, is_member=is_member, ballots=ballots,
+        my_ballot=my_ballot, numbers=numbers, topic=house.topics.get(split["topic_id"]),
+        restarts_left=max(0, groups.RESTART_LIMIT - (my_ballot["changes"] if my_ballot else 0)),
+        minimum_life=meetinghouse.MINIMUM_LIFE, seasoning=meetinghouse.SEASONING_TIME,
+    )
+
+
+def participant_name_or_software(participant_id):
+    if participant_id is None:
+        return "the software"
+    p = house.participants.get(participant_id)
+    return p.name if p else "(unknown)"
+
+
+def _SplitAction(split_id, action):
+    guard = RequireLogin()
+    if guard:
+        return guard
+    try:
+        with LOCK:
+            message = action()
+        if message:
+            flash(message)
+    except groups.SplitError as exc:
+        flash(str(exc))
+    return redirect(url_for("SplitPage", split_id=split_id))
+
+
+@app.route("/split/<split_id>/suggest", methods=["POST"])
+def SplitSuggest(split_id):
+    def Do():
+        left = groups.Suggest(house, conn, split_id, g.participant.id, request.form.getlist("first"), Now())
+        return f"Your way is on the list. Your suggestions can keep this open {left} more time{'s' if left != 1 else ''}." if left else "Your way is on the list. It no longer keeps suggestions open."
+    return _SplitAction(split_id, Do)
+
+
+@app.route("/split/<split_id>/ballot", methods=["POST"])
+def SplitBallot(split_id):
+    def Do():
+        rated = []
+        for key, value in request.form.items():
+            if key.startswith("rank_") and value.strip():
+                try:
+                    rated.append((int(value), key[5:]))
+                except ValueError:
+                    raise groups.SplitError("Rate with numbers: 1 for your first choice, 2 for your second, and so on.")
+        numbers = [n for n, _ in rated]
+        if len(set(numbers)) != len(numbers):
+            raise groups.SplitError("Give each way a different number.")
+        left = groups.CastBallot(house, conn, split_id, g.participant.id, [cid for _, cid in sorted(rated)], request.form.get("reason", ""), Now())
+        return f"Vote recorded. Your Votes can keep this Vote open {left} more time{'s' if left != 1 else ''}." if left else "Vote recorded. It counts, but it no longer keeps this Vote open."
+    return _SplitAction(split_id, Do)
+
+
+@app.route("/topic/<topic_id>/flag-group", methods=["POST"])
+def FlagGroup(topic_id):
+    guard = RequireLogin()
+    if guard:
+        return guard
+    try:
+        with LOCK:
+            prev_len = len(house.event_log)
+            house.FlagWrongGroup(topic_id, g.participant.id, Now())
+            persistence.SaveTopic(conn, house.topics[topic_id])
+            FlushNewEvents(prev_len)
+        flash("Thank you. The Initiator can move it to another group during its first week.")
+    except MeetinghouseError as exc:
+        flash(str(exc))
+    return redirect(url_for("TopicDetail", topic_id=topic_id))
+
+
+@app.route("/topic/<topic_id>/move-group", methods=["POST"])
+def MoveGroup(topic_id):
+    guard = RequireLogin()
+    if guard:
+        return guard
+    try:
+        with LOCK:
+            prev_len = len(house.event_log)
+            house.MoveToGroup(topic_id, g.participant.id, request.form.get("group", ""), Now())
+            persistence.SaveTopic(conn, house.topics[topic_id])
+            FlushNewEvents(prev_len)
+        flash("Moved.")
+    except MeetinghouseError as exc:
+        flash(str(exc))
+    return redirect(url_for("TopicDetail", topic_id=topic_id))
+
+
 # --- The public log ------------------------------------------------------------
 
 _SETTING_NAMES = {"voter_fraction": "Threshold", "approval_fraction": "Approval"}
@@ -1672,6 +1851,25 @@ def _DescribeLogEntry(entry, now):
         text = f"{who} was chosen as a Steward, for {d.get('days')} days"
     elif kind == "steward_vote_closed":
         text = "The Steward Vote closed"
+    elif kind == "split_map_frozen":
+        text = f"Group {d.get('group')} is deciding whether to split; the map is frozen"
+    elif kind == "split_suggestions_open":
+        text = f"Group {d.get('group')} decided to split; ways to split are open for suggestions"
+    elif kind == "split_suggested":
+        text = f"{who} suggested a way to split"
+    elif kind == "split_vote_started":
+        text = f"Group {d.get('group')} began Voting on how to split ({d.get('ways')} ways)"
+    elif kind == "split_ballot":
+        text = f"{who} Voted on how to split"
+    elif kind == "group_split":
+        sizes = d.get("sizes") or {}
+        text = f"Group {d.get('group')} split: " + ", ".join(f"Group {k} ({v} Members)" for k, v in sizes.items())
+    elif kind == "split_not_possible":
+        text = f"Group {d.get('group')} couldn't split: there was no valid way"
+    elif kind == "group_flagged":
+        text = f"{who} flagged {title} as being in the wrong group"
+    elif kind == "topic_moved":
+        text = f"{title} moved from Group {d.get('from_group')} to Group {d.get('to_group')}"
     elif kind == "member_left":
         text = f"{who} left Meetinghouse"
     elif kind == "member_joined":
@@ -1694,6 +1892,8 @@ def _LogLink(entry):
     d = entry["data"]
     if d.get("election_id"):
         return url_for("StewardVote", election_id=d["election_id"])
+    if d.get("split_id"):
+        return url_for("SplitPage", split_id=d["split_id"])
     if d.get("topic_id") and d["topic_id"] in house.topics:
         return url_for("TopicDetail", topic_id=d["topic_id"])
     return None

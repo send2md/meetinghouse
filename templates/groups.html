@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Groups — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Groups</h1>
+<p>The whole Meetinghouse is Group A. When a group feels too big, any of its Members can propose splitting it into two
+  groups of about half its Members each, by where they live. When A splits, its halves are AA and AB; when AA splits, AAA and AAB,
+  and so on. A Member belongs to their own group and every group above it. A group needs at least {{ min_members }} Members to split.
+  {% if my_group %}You are in <strong>Group {{ my_group }}</strong>.{% endif %}</p>
+
+<div class="card">
+  <table>
+    <tr><th>Group</th><th>Members</th><th></th></tr>
+    {% for row in rows %}
+    <tr>
+      <td>Group {{ row.name }}{% if row.name == 'A' %} <span class="muted">(all of Meetinghouse)</span>{% endif %}</td>
+      <td>{{ row.members }}</td>
+      <td>
+        {% if row.can_propose %}
+          <form method="post" action="{{ url_for('ProposeSplit', name=row.name) }}">
+            <label>Why you think Group {{ row.name }} should split (optional)</label>
+            <textarea name="description"></textarea>
+            <input type="submit" value="Propose splitting Group {{ row.name }}">
+          </form>
+        {% elif row.mine and row.why_not %}<span class="muted">{{ row.why_not }}</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if splits %}
+<div class="card">
+  <h3>Splits</h3>
+  {% for s in splits %}
+  <p><a href="{{ url_for('SplitPage', split_id=s.id) }}">Splitting Group {{ s.group_name }}</a>, started {{ s.frozen_at|day }} —
+    {% if s.phase == 'deciding' %}deciding whether to split{% elif s.phase == 'suggesting' %}suggesting ways to split{% elif s.phase == 'rating' %}Voting on how to split{% elif s.phase == 'done' %}done{% else %}not split{% endif %}</p>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

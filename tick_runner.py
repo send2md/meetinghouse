@@ -14,6 +14,7 @@ import os
 
 import mailer
 import persistence
+import groups
 import security
 import stewards
 from meetinghouse import Dismissal, PollResult, Subsection
@@ -59,7 +60,21 @@ def SendRenewalReminders(house, conn, now):
     return sent
 
 
-def RunTick(house, conn, now):
+def SpotFinder(conn, locator):
+    """spot_of(participant id) -> (lat, lon) from their town, postal code and country, or None."""
+
+    def SpotOf(participant_id):
+        if locator is None or not locator.Available():
+            return None
+        member = security.GetMember(conn, participant_id)
+        if member is None:
+            return None
+        return locator.Locate(member["country"] or member["verified_country"], member["zip"], member["town"])
+
+    return SpotOf
+
+
+def RunTick(house, conn, now, spot_of=None):
     """Close every eligible Topic/Poll, persist the results, and return them."""
     prev_len = len(house.event_log)
     closed = house.Tick(now)
@@ -74,8 +89,9 @@ def RunTick(house, conn, now):
             persistence.SaveParticipant(conn, participant)
     for entry in house.event_log[prev_len:]:
         persistence.LogEvent(conn, entry)
-    SettleSamePersonChecks(house, conn, closed, now)
+    SettleSamePersonChecks(house, conn, closed, now, spot_of)
     stewards.Tick(house, conn, now)
+    groups.Tick(house, conn, now, spot_of)
     LogMembershipChanges(house, conn, now)
     ForgetFacePrints(house, conn, now)
     return closed
@@ -101,11 +117,13 @@ def LogMembershipChanges(house, conn, now):
                 )
 
 
-def AdmitMember(house, conn, participant, now, extra=""):
+def AdmitMember(house, conn, participant, now, extra="", spot_of=None):
     """Make someone who passed their checks a Member, log it, and welcome them."""
     security.MarkActivated(conn, participant.id, now)
     participant.SignForm(signed_date=now.date())
     persistence.SaveParticipant(conn, participant)
+    groups.InitSchema(conn)
+    groups.PlaceNewMember(house, conn, participant.id, spot_of(participant.id) if spot_of else None)
     persistence.LogEvent(conn, {"kind": "member_joined", "at": now, "participant_id": participant.id})
     member = security.GetMember(conn, participant.id)
     if member is not None and member["email"]:
@@ -118,7 +136,7 @@ def AdmitMember(house, conn, participant, now, extra=""):
         )
 
 
-def SettleSamePersonChecks(house, conn, closed, now):
+def SettleSamePersonChecks(house, conn, closed, now, spot_of=None):
     """Act on same-person Jury Conversations that just closed.
 
     Yes, and the match is a current Member (even one on a Dismissal): one
@@ -161,7 +179,7 @@ def SettleSamePersonChecks(house, conn, closed, now):
             persistence.SaveParticipant(conn, match)
             security.SetFacePrint(conn, match.id, "")  # nothing is owed under the old account now
         security.SetFaceReview(conn, newcomer.id, topic.same_as_id, similarity, "admitted", now, topic.id)
-        AdmitMember(house, conn, newcomer, now, extra="The Jury Committee has finished looking at your photo. ")
+        AdmitMember(house, conn, newcomer, now, extra="The Jury Committee has finished looking at your photo. ", spot_of=spot_of)
 
 
 def KeepFacePrint(house, participant_id):

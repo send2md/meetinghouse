@@ -11,6 +11,28 @@
 </h1>
 <p class="muted">{{ topic.subsection.value }} Committee · started {{ topic.created_at|fmt }} · Initiator: {{ participant_name(topic.author_id) }}{% if topic.pollster_id %} · Pollster: {{ participant_name(topic.pollster_id) }}{% endif %} · {{ contactors|length }} Contactor{{ 's' if contactors|length != 1 }}{% if counts %} · {{ counts.values()|sum }} Voter{{ 's' if counts.values()|sum != 1 }}{% endif %}</p>
 
+{% if topic.group != 'A' %}
+<p class="muted">This Conversation is for <strong>Group {{ topic.group }}</strong>: only its Members can take part. <a href="{{ url_for('GroupsPage') }}">About groups</a></p>
+{% endif %}
+{% if split %}
+<div class="card notice"><p>If this passes, Group {{ topic.split_group }} goes on to choose how to split.
+  <a href="{{ url_for('SplitPage', split_id=split.id) }}">See the frozen map and how splitting works</a></p></div>
+{% endif %}
+{% if can_flag or can_move or topic.group_flags %}
+<div class="card">
+  {% if topic.group_flags %}<p class="muted">{{ topic.group_flags|length }} Contactor{{ 's have' if topic.group_flags|length != 1 else ' has' }} flagged this Conversation as being in the wrong group.</p>{% endif %}
+  {% if can_flag %}
+  <form method="post" action="{{ url_for('FlagGroup', topic_id=topic.id) }}" class="inline"><input type="submit" class="secondary" value="Flag: this is in the wrong group"></form>
+  {% endif %}
+  {% if can_move and move_choices %}
+  <form method="post" action="{{ url_for('MoveGroup', topic_id=topic.id) }}">
+    <label>Move it to another of your groups (first week only)</label>
+    <select name="group">{% for grp in move_choices %}<option value="{{ grp }}">Group {{ grp }}{% if grp == 'A' %} (all of Meetinghouse){% endif %}</option>{% endfor %}</select>
+    <p><input type="submit" class="secondary" value="Move it"></p>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 {% if topic.same_as_id %}
 <div class="card same-person">
   {% for pid, label in [(topic.target_participant_id, "Joining"), (topic.same_as_id, "Member" if not house_participant(topic.same_as_id).HasLeft() else "Left Meetinghouse")] %}
