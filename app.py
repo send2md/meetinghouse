@@ -252,6 +252,12 @@ def AboutTheArt():
     return render_template("about_art.html")
 
 
+@app.route("/tutorial")
+def Tutorial():
+    """A step-by-step guide to using the site, with pictures from the sandbox. Public."""
+    return render_template("tutorial.html")
+
+
 @app.route("/design")
 def Design():
     """The design document: how Meetinghouse works and why. Public."""

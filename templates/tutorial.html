@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}How to use Meetinghouse{% endblock %}
+{% block content %}
+<article class="card tutorial">
+<h1>How to use Meetinghouse</h1>
+<p>Meetinghouse is a place where a group of people make decisions together, slowly and in the open, the way a Quaker Meeting for Business does. People talk a matter through, Vote, change their minds, and Vote again, until the Meeting reaches a decision.</p>
+<p>This page walks you through the site, step by step. The pictures come from the <a href="https://sandbox.meetinghouse.ai/">practice sandbox</a>, where everyone is made up. You can try everything there without changing anything real.</p>
+
+<nav class="tutorial-contents">
+<p><strong>On this page</strong></p>
+<ol>
+<li><a href="#look">Looking around</a></li>
+<li><a href="#join">Joining</a></li>
+<li><a href="#conversation">Taking part in a Conversation</a></li>
+<li><a href="#closing">How a Conversation closes</a></li>
+<li><a href="#start">Starting a Conversation</a></li>
+<li><a href="#rules-jury">The Rules and Jury Committees</a></li>
+<li><a href="#watch">Keeping watch</a></li>
+<li><a href="#account">Your account</a></li>
+<li><a href="#words">The words we use</a></li>
+</ol>
+</nav>
+
+<h2 id="look">1. Looking around</h2>
+<p>Anyone can read everything on Meetinghouse, without joining or logging in. On the front page, click <strong>Just look around?</strong></p>
+<figure><img src="{{ url_for('static', filename='tutorial/front.png') }}" alt="The front page, with the Log in box, the word OR, and Just look around?"><figcaption>The front page. Members log in on the right; anyone else can just look around.</figcaption></figure>
+<p>The tabs along the top take you to each part of the site. You'll see the open Conversations in each of the three Committees:</p>
+<ul>
+<li>The <strong>Forum Committee</strong> decides outside matters: anything the Meeting wants to decide about the world.</li>
+<li>The <strong>Rules Committee</strong> decides how Meetinghouse itself works.</li>
+<li>The <strong>Jury Committee</strong> decides whether to dismiss a Member for a while, if they've been abusive.</li>
+</ul>
+<figure><img src="{{ url_for('static', filename='tutorial/look.png') }}" alt="The list of open Conversations in each Committee"><figcaption>Looking around: the open Conversations in each Committee, with how the Votes stand.</figcaption></figure>
+<p>Click a Committee's tab to see all its Conversations, open and closed.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/committee.png') }}" alt="The Forum Committee's list of Conversations"><figcaption>The Forum Committee's Conversations.</figcaption></figure>
+
+<h2 id="join">2. Joining</h2>
+<p>To take part, you join as a Member. Joining takes a few minutes, and nobody has to approve you: the site does it all by itself.</p>
+<ol>
+<li><strong>Choose a user name.</strong> On the front page, type the user name you'd like in the Log in box. If nobody has it yet, the site asks for your name, email address, town, postal code and country.
+<figure class="narrow"><img src="{{ url_for('static', filename='tutorial/register.png') }}" alt="The form asking for name, email, town, postal code and country"><figcaption>Your name and photo will be public; your email address stays private.</figcaption></figure></li>
+<li><strong>Add a passkey.</strong> A passkey lets you log in with your phone's or computer's face, fingerprint or PIN unlock, the same way you unlock the device. There's no password to remember or to steal.
+<figure><img src="{{ url_for('static', filename='tutorial/join.png') }}" alt="The Finish joining page, with the passkey step and the ID check step"><figcaption>Finish joining: first the passkey, then the ID check.</figcaption></figure></li>
+<li><strong>Pass the ID check.</strong> Choose one of the approved ID-check companies. You photograph your ID, take a short live selfie, and show proof of your address. This proves you're a real person who joins only once. Meetinghouse keeps only the result, your town, postal code and country, and your selfie, which becomes your public photo.</li>
+<li><strong>You're in.</strong> When the check passes, your membership starts straight away, and a welcome email arrives.</li>
+</ol>
+<p class="aside"><strong>If your photo looks like someone else's:</strong> the site compares every new Member's face with everyone's, so nobody can join twice. If yours looks a lot like a Member's, you'll be asked for a new selfie in good light. If it still matches, the Jury Committee looks at both photos and decides. Twins and look-alikes are let in.</p>
+<p><strong>Once a year</strong> the site asks you to confirm you're still here, with a quick selfie. You'll get reminder emails a month and a week before. If the date passes, you can still read everything, but you can't Vote or comment until you do it.</p>
+
+<h2 id="conversation">3. Taking part in a Conversation</h2>
+<p>Every decision is made in a <strong>Conversation</strong>. A Conversation has a Title, the words its Initiator started it with, a Discussion, and usually a <strong>Question</strong> for the Meeting to decide.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/conversation-top.png') }}" alt="The top of a Conversation: its Title, who started it, its Question and its opening words"><figcaption>The top of a Conversation. Under the Title: its Committee, who started it (the Initiator), who attached its Question (the Pollster), and how many people have taken part.</figcaption></figure>
+
+<h3>When you open a Conversation</h3>
+<p>Opening a Conversation makes you one of its <strong>Contactors</strong>. That matters: a Question passes only if enough of its Contactors Vote. So if you open a Conversation, please Vote on its Question. The first time you open one, the site asks you, once:</p>
+<figure><img src="{{ url_for('static', filename='tutorial/ask-to-vote.png') }}" alt="The notice: Would you like to Vote?"><figcaption>You're asked only once in each Conversation.</figcaption></figure>
+
+<h3>The Discussion</h3>
+<p>The Discussion is where the Meeting talks the matter through. Comments and Votes, each with its reason, appear together in the order they were made. Write as much as you like in the box at the bottom and click <strong>Post Comment</strong>.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/discussion.png') }}" alt="The Discussion, with Comments and Votes and the box to add a Comment"><figcaption>The Discussion. The note beside the button says how many more times your Comments can keep the Conversation open (see section 4).</figcaption></figure>
+
+<h3>Voting</h3>
+<p>Under the Discussion are the Votes. Choose your Vote, write your reason, and click <strong>Vote</strong>. Every Vote needs its reason, and everyone can read it.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/votes.png') }}" alt="The Votes, with the count so far and the form to Vote with a reason"><figcaption>The count so far, how many Contactors haven't Voted yet, and your Vote with its reason.</figcaption></figure>
+<ul>
+<li><strong>Yes</strong> or <strong>No</strong>.</li>
+<li><strong>Abstain</strong>, in the Forum Committee only, means you stand aside: you won't stand in the way. It counts in favor.</li>
+<li>You can change your Vote as often as you like; your latest Vote is the one that counts. Changing your mind as the Discussion goes on is the point.</li>
+</ul>
+
+<h2 id="closing">4. How a Conversation closes</h2>
+<p>Nothing is decided in a hurry. A Conversation closes only when the Meeting has had time to settle:</p>
+<ol>
+<li>Once its Question is attached, it stays open for at least <strong>3 weeks</strong> (its Minimum Life).</li>
+<li>Then it waits until it has gone <strong>3 weeks with nothing new</strong> (its Seasoning Time). Each new Comment or Vote starts those 3 weeks over.</li>
+<li>When it closes, the Question <strong>passes</strong> only if enough Contactors Voted (the Threshold), and enough of the Votes were in favor (the Approval). Otherwise it <strong>fails</strong>.</li>
+</ol>
+<p><strong>The 5 restarts.</strong> So that nobody can keep a Conversation open forever, only your first 5 Comments and your first 5 Votes in a Conversation start the Seasoning Time over. After that you can still comment and Vote, and your Vote still counts; it just doesn't keep the Conversation open. The note beside each button tells you how many you have left.</p>
+<p>A closed Conversation shows its result at the top, and stays on the record for good.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/closed.png') }}" alt="A closed Conversation marked PASSED"><figcaption>A closed Conversation that passed.</figcaption></figure>
+<p>The <a href="{{ url_for('CurrentRules') }}">Current Rules</a> page shows each Committee's Threshold and Approval as they stand today.</p>
+
+<h2 id="start">5. Starting a Conversation</h2>
+<p>Any Member can start a Conversation. On your Dashboard, click <strong>New Conversation</strong> beside the Committee you want, give it a Title, and write what's on your mind.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/new-forum.png') }}" alt="The form to start a new Forum Conversation"><figcaption>Starting a Forum Conversation. The Question is optional.</figcaption></figure>
+<p><strong>A Question is optional in the Forum Committee.</strong> You can start with Discussion only, and attach a Question later, once the Meeting knows what to ask. Anyone who opens a Conversation that has no Question yet is asked whether they'd like to attach one. Whoever attaches it becomes its <strong>Pollster</strong>, and the 3 weeks of Minimum Life start then.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/attach.png') }}" alt="The box asking: Do you want to attach a Question to this Conversation?"><figcaption>A Conversation with no Question yet asks each new reader whether they'd like to attach one.</figcaption></figure>
+
+<h2 id="rules-jury">6. The Rules and Jury Committees</h2>
+<h3>Changing a Rule</h3>
+<p>The Rules Committee can change how hard it is for a Question to pass in each Committee: its Threshold or its Approval. Change is slow on purpose: each Rules Vote can move a number by at most 5% of its value, one setting at a time, and every number stays between 9% and 100%. The site lists only the values you're allowed to choose.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/new-rules.png') }}" alt="The form to start a Rules Conversation, choosing a setting and its new value"><figcaption>Starting a Rules Conversation. Its Question is always “Adopt this change?”; to keep things as they are, Vote No.</figcaption></figure>
+<p>When a Rules Conversation passes, the site makes the change itself, at once, and writes it in the public Log. Nobody has to do anything, and nobody can change a Rule any other way.</p>
+
+<h3>The Jury</h3>
+<p>If a Member is abusive, any Member can start a Jury Conversation about them. Jury Votes are Yes or No. If it passes, the Member is dismissed for a while: 2 weeks the first time, then 4, then 8. A Dismissal always ends.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/new-jury.png') }}" alt="The form to start a Jury Conversation about a Member"><figcaption>Starting a Jury Conversation. Say clearly what happened and where.</figcaption></figure>
+<p>While someone is dismissed, they can't log in, and their Comments and Votes are hidden. Their Votes come off every open Conversation, and each one's Seasoning Time starts over so everyone can see the change. When the time is up, they come back on their own.</p>
+
+<h2 id="watch">7. Keeping watch</h2>
+<p><strong>The Daily Summary</strong> shows, in one place, every open Conversation and how its Votes stand, what closed today, and anyone dismissed today.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/summary.png') }}" alt="The Daily Summary"><figcaption>The Daily Summary, with today's log fingerprint at the top.</figcaption></figure>
+<p><strong>The Log</strong> records everything the site does: Members joining and leaving, Conversations, Votes, results, Rules changes, Dismissals, and which version of the software is running. Nothing is ever taken out. Each day has a <strong>fingerprint</strong>: a long code that depends on everything logged so far. If anyone ever changed an old entry, the fingerprints would stop matching, and the Log page would say so.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/log.png') }}" alt="The public Log, with today's fingerprint"><figcaption>The public Log.</figcaption></figure>
+<p><strong>The Map</strong> shows roughly where Members live: each as part of a square about 5 km across, with the town's name. No names, and no addresses.</p>
+
+<h2 id="account">8. Your account</h2>
+<p>The <strong>Account</strong> tab is where you:</p>
+<ul>
+<li>see when your yearly selfie is due;</li>
+<li>add a passkey for another phone or computer, or remove one you no longer use;</li>
+<li>change your email address.</li>
+</ul>
+<figure><img src="{{ url_for('static', filename='tutorial/account.png') }}" alt="The Account page's passkeys"><figcaption>Your passkeys. Add one on each device you use, so losing one device doesn't lock you out.</figcaption></figure>
+<p><strong>If you lose your device,</strong> type your user name on the Log in page, click <strong>Lost your device?</strong>, and ask for a recovery code by email. For your safety, the code only starts working 48 hours later, and an email goes out at once, so if someone else asked for it, you can cancel it.</p>
+<p>Every time you log in, the site tells you when you last logged in. If that wasn't you, use account recovery.</p>
+<p><strong>Leaving.</strong> You can leave at any time, from the bottom of your Account page. Your Comments and Votes come off every open Conversation; your Comments and Votes in closed Conversations stay on the record under your name, with a plain “left Meetinghouse” picture instead of your photo. Your email address, photo and passkeys are deleted. You're welcome back any time, by joining again.</p>
+
+<h2 id="words">9. The words we use</h2>
+<dl class="tutorial-words">
+<dt>Member</dt><dd>Someone who has joined.</dd>
+<dt>Committee</dt><dd>The Forum, Rules or Jury Committee.</dd>
+<dt>Conversation</dt><dd>A matter brought to one of the Committees.</dd>
+<dt>Initiator</dt><dd>The Member who started a Conversation.</dd>
+<dt>Question</dt><dd>What the Meeting is asked to decide in a Conversation.</dd>
+<dt>Pollster</dt><dd>The Member who attached the Question.</dd>
+<dt>Contactor</dt><dd>A Member who has opened a Conversation, commented on it, or Voted on it.</dd>
+<dt>Threshold</dt><dd>How many of the Contactors must Vote for a Question to pass.</dd>
+<dt>Approval</dt><dd>How many of the Votes must be in favor.</dd>
+<dt>Minimum Life</dt><dd>At least 3 weeks: how long a Question stays open.</dd>
+<dt>Seasoning Time</dt><dd>3 weeks without anything new before a Conversation closes.</dd>
+<dt>Dismissal</dt><dd>A Member's time away, decided by the Jury.</dd>
+</dl>
+<p>For the full design, and the reasons behind it, see <a href="{{ url_for('Design') }}">How Meetinghouse works</a>.</p>
+</article>
+{% endblock %}

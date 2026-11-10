@@ -28,6 +28,8 @@
           ({% for p in providers %}{{ p.label }}{{ ", " if not loop.last }}{% endfor %}){% endif %}. It sees your ID, your face
           and your proof of address. Meetinghouse keeps only the result, the date, your country, your town and postal code,
           and a reference number.</li>
+        <li>Meetinghouse makes a face print (numbers, not a picture) from your selfie and compares it with every Member's,
+          so nobody can join twice. It's deleted if you leave.</li>
         <li>Once a year you'll confirm you're still here with a quick selfie.</li>
       </ul>
       <label><input type="checkbox" name="agree" value="1" {% if form.get('agree') %}checked{% endif %}> I've read this and want to join</label>

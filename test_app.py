@@ -211,3 +211,13 @@ def test_design_page_is_public_and_linked_from_the_front_page(client):
     text = page.data.decode()
     assert "Meetinghouse Design" in text and "Stewards and the treasury" in text
     assert "A Question passes only after its Seasoning Time" in text
+
+
+def test_tutorial_is_public_and_linked_from_the_front_page(client):
+    test_client, _ = client
+    assert 'href="/tutorial"' in test_client.get("/").data.decode()
+    page = test_client.get("/tutorial")
+    assert page.status_code == 200
+    text = page.data.decode()
+    assert "How to use Meetinghouse" in text and "tutorial/votes.png" in text
+    assert test_client.get("/static/tutorial/votes.png").status_code == 200
