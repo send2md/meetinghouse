@@ -188,3 +188,9 @@ input[type=submit].danger { background: var(--no); }
 .tutorial-words dd { margin: 0 0 0 1.25rem; }
 .tutorial figure.narrow { max-width: 520px; }
 @media (max-width: 600px) { .tutorial { font-size: 1.2rem; } .tutorial h1 { font-size: 2rem; } .tutorial h2 { font-size: 1.6rem; } }
+.steward-list { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+.steward { margin: 0; text-align: center; }
+.steward img, .volunteer img { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid #d8d2c8; }
+.volunteer { display: flex; gap: 1rem; align-items: flex-start; border-top: 1px solid var(--line); padding: 0.75rem 0; }
+.volunteer img { width: 96px; height: 96px; flex: none; }
+.inline-choice { display: inline-block; margin-right: 1rem; font-weight: normal; }

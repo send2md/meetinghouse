@@ -22,6 +22,7 @@ import zlib
 
 import persistence
 import security
+import stewards
 from meetinghouse import RuleChange, Subsection, UtcNow, VoteChoice
 
 MEMBERS = [
@@ -166,6 +167,23 @@ def Seed(db_path, upload_dir, now=None):
         persistence.SaveTopic(conn, topic)
     for entry in sorted(joins + house.event_log, key=lambda e: e["at"]):
         persistence.LogEvent(conn, entry)
+
+    # 6. A Steward Vote, rating the volunteers (normally the first one opens a
+    # year after Meetinghouse opens; the sandbox starts one early to try).
+    stewards.InitSchema(conn)
+    election = stewards.OpenElection(conn, Ago(30), seats=1, terms=[365])
+    for who, words in (
+        ("grace", "I keep the books for the food co-op, so paying bills on time is second nature to me."),
+        ("elijah", "I'm retired and have time. I've run a small web site for our church for years."),
+        ("hannah", "I'd like to give back. I'm careful with money and I answer my email."),
+    ):
+        stewards.Volunteer(house, conn, election, people[who], words, Ago(28))
+    stewards.Tick(house, conn, Ago(9))  # volunteering ends: three stood, so they're rated
+    stewards.CastBallot(house, conn, election, people["samuel"], "Grace already does this for the co-op.", Ago(8),
+                        ranking=[people["grace"], people["hannah"], people["elijah"]])
+    stewards.CastBallot(house, conn, election, people["ruth"], "Elijah knows web sites; Grace knows money.", Ago(6),
+                        ranking=[people["elijah"], people["grace"]])
+    stewards.AddComment(house, conn, election, people["marcus"], "Elijah, would you be able to fix the site if it went down at night?", Ago(7))
     return people
 
 

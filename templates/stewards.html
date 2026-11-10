@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Stewards — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Stewards</h1>
+<p>Three Stewards keep the lights on: they pay for the hosting and the meetinghouse.ai name, and keep the server running.
+  They have no other powers. A Stewardship lasts a year, nobody serves twice, and a new Steward is chosen every four months
+  by a Steward Vote in the Rules Committee. <a href="{{ url_for('Design') }}">How Meetinghouse works</a></p>
+
+<div class="card">
+  <h3>Serving now</h3>
+  {% if current %}
+  <div class="steward-list">
+    {% for s in current %}
+    <figure class="steward">
+      <img src="{{ url_for('MemberPhoto', participant_id=s.person.id) }}" alt="Photo of {{ s.person.name }}">
+      <figcaption><strong>{{ s.person.name }}</strong>{% if s.person.town %}<br>{{ s.person.town }}{% endif %}<br>
+        <span class="muted">{% if s.extended %}stays on until the next Steward starts{% else %}until {{ s.ends_at|day }}{% endif %}</span></figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">No Stewards yet. The first Steward Vote opens a year after Meetinghouse opens to Members{% if launched %}, on {{ (launched + first_after)|day }}{% endif %}. Until then, Meetinghouse's founder pays the bills.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>Steward Votes</h3>
+  {% if not elections %}<p class="muted">None yet.</p>{% endif %}
+  {% for e in elections %}
+  <p><a href="{{ url_for('StewardVote', election_id=e.id) }}">Steward Vote opened {{ e.opened_at|day }}</a>
+    — {% if e.phase == 'volunteering' %}<strong>volunteers wanted</strong> until {{ e.volunteering_ends|day }}{% elif e.phase == 'rating' %}<strong>Voting now</strong> (rate the choices){% elif e.phase == 'yesno' %}<strong>Voting now</strong> (Yes or No on each volunteer){% else %}closed {{ e.closed_at|day }}{% endif %}
+    {% if e.seats > 1 %}<span class="muted">· {{ e.seats }} Stewards</span>{% endif %}</p>
+  {% endfor %}
+</div>
+
+{% if everyone %}
+<div class="card">
+  <h3>Everyone who has served</h3>
+  <table>
+    <tr><th>Steward</th><th>From</th><th>To</th></tr>
+    {% for s in everyone %}<tr><td>{{ s.person.name }}</td><td>{{ s.starts_at|day }}</td><td>{{ s.ends_at|day }}</td></tr>{% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

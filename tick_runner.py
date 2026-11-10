@@ -15,6 +15,7 @@ import os
 import mailer
 import persistence
 import security
+import stewards
 from meetinghouse import Dismissal, PollResult, Subsection
 
 REMINDER_DAYS = (30, 7)
@@ -74,6 +75,7 @@ def RunTick(house, conn, now):
     for entry in house.event_log[prev_len:]:
         persistence.LogEvent(conn, entry)
     SettleSamePersonChecks(house, conn, closed, now)
+    stewards.Tick(house, conn, now)
     LogMembershipChanges(house, conn, now)
     ForgetFacePrints(house, conn, now)
     return closed

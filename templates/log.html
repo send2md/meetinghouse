@@ -23,7 +23,7 @@
   <tr>
     <td>{{ row.entry.seq }}</td>
     <td class="when">{{ row.at|day }} {{ "%02d:%02d"|format(row.at.hour, row.at.minute) }}</td>
-    <td>{% if row.topic %}<a href="{{ url_for('TopicDetail', topic_id=row.topic.id) }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}</td>
+    <td>{% if row.link %}<a href="{{ row.link }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}</td>
     <td><code title="{{ row.entry.hash }}">{{ row.entry.hash[:10] }}</code></td>
   </tr>
   {% else %}

@@ -42,6 +42,7 @@ import meetinghouse
 import mailer
 import persistence
 import security
+import stewards
 import tick_runner
 from meetinghouse import (
     RESTART_LIMIT,
@@ -91,6 +92,7 @@ def Now():
 
 
 security.InitSchema(conn)
+stewards.InitSchema(conn)
 security.EnsureStatusRows(conn, house, Now())
 persistence.ForgetRetiredProfileFields(conn)
 
@@ -229,6 +231,9 @@ def Dashboard():
         paused=security.IsActivated(conn, g.participant.id) and not g.participant.IsParticipant(now),
         renew_soon=_RenewalDue(g.participant, now),
         has_passkey=security.HasPasskeys(conn, g.participant.id),
+        steward_thanks=stewards.PendingThanks(conn, g.participant.id),
+        steward_thanks_text=stewards.THANK_YOU,
+        open_steward_votes=stewards.OpenElections(conn),
     )
 
 
@@ -1069,7 +1074,9 @@ def SubsectionView(name):
         counts = house.EffectiveVoteCounts(topic, now) if topic.HasPoll() else None
         rows.append({"topic": topic, "counts": counts})
     return render_template(
-        "subsection.html", subsection=subsection, rows=rows, rule=house.current_rules[subsection]
+        "subsection.html", subsection=subsection, rows=rows, rule=house.current_rules[subsection],
+        current_stewards=stewards.CurrentStewards(conn, now) if subsection is Subsection.RULES else [],
+        open_steward_votes=stewards.OpenElections(conn) if subsection is Subsection.RULES else [],
     )
 
 
@@ -1446,6 +1453,154 @@ def MemberMap():
     )
 
 
+# --- Stewards and the Steward Vote -------------------------------------------------
+
+
+def _PersonCard(participant_id):
+    member = security.GetMember(conn, participant_id)
+    return {
+        "id": participant_id,
+        "name": (house.participants[participant_id].name if participant_id in house.participants else "(unknown)"),
+        "town": (member["town"] if member else ""),
+    }
+
+
+@app.route("/stewards")
+def StewardsPage():
+    """Who the Stewards are, and every Steward Vote. Public."""
+    now = Now()
+    return render_template(
+        "stewards.html",
+        current=[dict(s, person=_PersonCard(s["participant_id"])) for s in stewards.CurrentStewards(conn, now)],
+        everyone=[dict(s, person=_PersonCard(s["participant_id"])) for s in reversed(stewards.Stewards(conn))],
+        elections=stewards.Elections(conn),
+        launched=stewards.LaunchedAt(conn),
+        first_after=stewards.FIRST_VOTE_AFTER,
+        now=now,
+    )
+
+
+@app.route("/stewards/vote/<election_id>")
+def StewardVote(election_id):
+    now = Now()
+    election = stewards.Election(conn, election_id)
+    if election is None:
+        abort(404)
+    me = g.participant.id if g.participant else None
+    if me:
+        stewards.Touch(house, conn, election_id, me, now)
+    volunteers = [dict(v, person=_PersonCard(v["participant_id"])) for v in stewards.Volunteers(conn, election_id)]
+    viewer_key = me or session.setdefault("viewer_key", secrets.token_hex(8))
+    ordered = stewards.ViewerOrder(volunteers, viewer_key, election_id)
+    ballots = [dict(b, person=_PersonCard(b["participant_id"])) for b in stewards.Ballots(conn, election_id)]
+    names = {v["participant_id"]: v["person"]["name"] for v in volunteers}
+    my_ballot = next((b for b in ballots if b["participant_id"] == me), None)
+    tally = contactors = None
+    if election["phase"] == "yesno" or (election["phase"] == "closed" and "tally" in election["result"]):
+        tally, contactors = (
+            (election["result"]["tally"], election["result"].get("contactors"))
+            if election["phase"] == "closed"
+            else stewards.YesNoTally(house, conn, election, now)
+        )
+    return render_template(
+        "steward_vote.html",
+        election=election,
+        volunteers=ordered,
+        names=names,
+        ballots=ballots,
+        my_ballot=my_ballot,
+        comments=[dict(c, person=_PersonCard(c["participant_id"])) for c in stewards.Comments(conn, election_id)],
+        can_volunteer=me is not None and stewards.CanVolunteer(house, conn, election, me, now) is None,
+        why_not=stewards.CanVolunteer(house, conn, election, me, now) if me else None,
+        am_volunteer=any(v["participant_id"] == me for v in volunteers),
+        is_member=me is not None and g.participant.IsActive(now) and security.IsActivated(conn, me),
+        tally=tally,
+        contactors=contactors,
+        restarts_left=max(0, stewards.RESTART_LIMIT - (my_ballot["changes"] if my_ballot else 0)),
+        minimum_life=meetinghouse.MINIMUM_LIFE,
+        seasoning=meetinghouse.SEASONING_TIME,
+        now=now,
+    )
+
+
+def _StewardAction(election_id, action):
+    guard = RequireLogin()
+    if guard:
+        return guard
+    try:
+        with LOCK:
+            message = action()
+        if message:
+            flash(message)
+    except stewards.StewardError as exc:
+        flash(str(exc))
+    return redirect(url_for("StewardVote", election_id=election_id))
+
+
+@app.route("/stewards/vote/<election_id>/volunteer", methods=["POST"])
+def StewardVolunteer(election_id):
+    return _StewardAction(
+        election_id,
+        lambda: stewards.Volunteer(house, conn, election_id, g.participant.id, request.form.get("statement", ""), Now())
+        or "Thank you for standing. Your name is on the list.",
+    )
+
+
+@app.route("/stewards/vote/<election_id>/withdraw", methods=["POST"])
+def StewardWithdraw(election_id):
+    return _StewardAction(
+        election_id, lambda: stewards.Withdraw(conn, election_id, g.participant.id, Now()) or "You've withdrawn."
+    )
+
+
+@app.route("/stewards/vote/<election_id>/comment", methods=["POST"])
+def StewardComment(election_id):
+    return _StewardAction(
+        election_id,
+        lambda: stewards.AddComment(house, conn, election_id, g.participant.id, request.form.get("text", ""), Now()),
+    )
+
+
+@app.route("/stewards/vote/<election_id>/ballot", methods=["POST"])
+def StewardBallot(election_id):
+    def Cast():
+        election = stewards.Election(conn, election_id)
+        reason = request.form.get("reason", "")
+        if election and election["phase"] == "rating":
+            rated = []
+            for key, value in request.form.items():
+                if key.startswith("rank_") and value.strip():
+                    try:
+                        rated.append((int(value), key[5:]))
+                    except ValueError:
+                        raise stewards.StewardError("Rate with numbers: 1 for your first choice, 2 for your second, and so on.")
+            numbers = [n for n, _ in rated]
+            if len(set(numbers)) != len(numbers):
+                raise stewards.StewardError("Give each volunteer a different number.")
+            left = stewards.CastBallot(
+                house, conn, election_id, g.participant.id, reason, Now(), ranking=[pid for _, pid in sorted(rated)]
+            )
+        else:
+            approvals = {key[7:]: value for key, value in request.form.items() if key.startswith("answer_")}
+            left = stewards.CastBallot(house, conn, election_id, g.participant.id, reason, Now(), approvals=approvals)
+        return (
+            f"Vote recorded. Your Votes can keep this Steward Vote open {left} more time{'s' if left != 1 else ''}."
+            if left
+            else "Vote recorded. It counts, but it no longer keeps this Steward Vote open."
+        )
+
+    return _StewardAction(election_id, Cast)
+
+
+@app.route("/stewards/thanks", methods=["POST"])
+def StewardThanks():
+    guard = RequireLogin()
+    if guard:
+        return guard
+    stewards.AnswerThanks(conn, g.participant.id, request.form.get("next") == "yes")
+    return redirect(url_for("Dashboard"))
+
+
 # --- The public log ------------------------------------------------------------
 
 _SETTING_NAMES = {"voter_fraction": "Threshold", "approval_fraction": "Approval"}
@@ -1499,6 +1654,24 @@ def _DescribeLogEntry(entry, now):
         text = f"{who}'s photo closely matched a Member's; they were asked for a new selfie"
     elif kind == "join_refused_same_person":
         text = f"{who} was not let in: the Jury decided they are already a Member"
+    elif kind == "steward_vote_opened":
+        text = "A Steward Vote opened: volunteers wanted" if d.get("seats", 1) == 1 else f"A Steward Vote opened for {d.get('seats')} Stewards: volunteers wanted"
+    elif kind == "steward_volunteered":
+        text = f"{who} volunteered to be a Steward"
+    elif kind == "steward_withdrew":
+        text = f"{who} withdrew from the Steward Vote"
+    elif kind == "steward_volunteers_wanted":
+        text = "Nobody has volunteered for the Steward Vote yet; asking again"
+    elif kind == "steward_vote_started":
+        text = "The Steward Vote began" + (" (rate the choices)" if d.get("vote_kind") == "rating" else " (Yes or No on each volunteer)")
+    elif kind == "steward_ballot":
+        text = f"{who} Voted in the Steward Vote"
+    elif kind == "steward_comment":
+        text = f"{who} commented in the Steward Vote"
+    elif kind == "steward_chosen":
+        text = f"{who} was chosen as a Steward, for {d.get('days')} days"
+    elif kind == "steward_vote_closed":
+        text = "The Steward Vote closed"
     elif kind == "member_left":
         text = f"{who} left Meetinghouse"
     elif kind == "member_joined":
@@ -1514,6 +1687,16 @@ def _DescribeLogEntry(entry, now):
     else:
         text = kind.replace("_", " ")
     return text, topic
+
+
+def _LogLink(entry):
+    """Where a log entry's row links to: its Conversation or Steward Vote."""
+    d = entry["data"]
+    if d.get("election_id"):
+        return url_for("StewardVote", election_id=d["election_id"])
+    if d.get("topic_id") and d["topic_id"] in house.topics:
+        return url_for("TopicDetail", topic_id=d["topic_id"])
+    return None
 
 
 def _Pct(value):
@@ -1538,7 +1721,7 @@ def PublicLog():
     rows = []
     for entry in entries:
         text, topic = _DescribeLogEntry(entry, now)
-        rows.append({"entry": entry, "text": text, "topic": topic, "at": dt.datetime.fromisoformat(entry["at"])})
+        rows.append({"entry": entry, "text": text, "link": _LogLink(entry), "at": dt.datetime.fromisoformat(entry["at"])})
     checked, broken_at = persistence.CheckLog(conn)
     return render_template(
         "log.html",
@@ -1571,7 +1754,9 @@ def Summary():
     if guard:
         return guard
     summary = house.DailySummary(g.participant.id, Now())
-    return render_template("summary.html", summary=summary, fingerprint=_TodaysFingerprint(Now()))
+    return render_template(
+        "summary.html", summary=summary, fingerprint=_TodaysFingerprint(Now()), open_steward_votes=stewards.OpenElections(conn)
+    )
 
 
 @app.route("/admin/login", methods=["GET", "POST"])

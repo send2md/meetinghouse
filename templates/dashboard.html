@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Meetinghouse{% endblock %}
 {% block content %}
+{% for t in steward_thanks or [] %}
+<div class="card notice">
+  <p>{{ steward_thanks_text }}</p>
+  <form method="post" action="{{ url_for('StewardThanks') }}">
+    <label class="check"><input type="checkbox" name="next" value="yes"> Put my name forward for the next Steward position</label>
+    <p><input type="submit" value="OK"></p>
+  </form>
+</div>
+{% endfor %}
+{% for e in open_steward_votes or [] %}
+<div class="card notice">
+  <p><strong>Steward Vote:</strong> {% if e.phase == 'volunteering' %}volunteers wanted until {{ e.volunteering_ends|day }}.{% else %}Voting now.{% endif %}
+    <a href="{{ url_for('StewardVote', election_id=e.id) }}">Take a look</a></p>
+</div>
+{% endfor %}
 {% if guest %}
 <div class="card notice">
   <p>You're looking around without logging in. Everyone can see everything here; only Members can comment, Vote or

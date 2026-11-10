@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Steward Vote — Meetinghouse{% endblock %}
+{% block content %}
+<h1>Steward Vote
+  {% if election.phase == 'closed' %}<span class="badge passed">CLOSED</span>{% else %}<span class="badge open">OPEN</span>{% endif %}
+</h1>
+<p class="muted">Rules Committee · opened {{ election.opened_at|day }} · {{ election.seats }} Steward{{ 's' if election.seats != 1 }} to choose · <a href="{{ url_for('StewardsPage') }}">all Stewards</a></p>
+
+<div class="card question">
+  {% if election.phase == 'volunteering' %}
+    <h2>Volunteers wanted</h2>
+    <p>Any current Member who has never been a Steward can put their name forward, until {{ election.volunteering_ends|day }}.
+      You can withdraw until the Vote begins. Everyone can comment and ask the volunteers questions below.</p>
+  {% elif election.phase == 'rating' %}
+    <h2>Rate the volunteers</h2>
+    <p>Give your first choice 1, your second 2, and so on. You don't have to rate everyone. The Vote stays open until at least
+      {{ (election.voting_started + minimum_life)|day }}, and closes once no ballot has changed for {{ seasoning.days // 7 }} weeks.
+      There's no Threshold: a Steward is always chosen.</p>
+  {% elif election.phase == 'yesno' %}
+    <h2>Yes or No on {{ 'each volunteer' if volunteers|length > 1 else 'the volunteer' }}</h2>
+    <p>Only {{ volunteers|length }} {{ 'Member' if volunteers|length == 1 else 'Members' }} stood, so this is a Yes-or-No Vote with the Rules Committee's
+      Threshold ({{ election.voter_fraction|pct }}) and Approval ({{ election.approval_fraction|pct }}). Seats still empty get their own Steward Vote straight away.</p>
+  {% else %}
+    <h2>Result</h2>
+    {% if election.result.winners %}
+      <p>Chosen: {% for pid in election.result.winners %}<strong>{{ names.get(pid, participant_name(pid)) }}</strong>{{ ", " if not loop.last }}{% endfor %}.</p>
+    {% else %}<p>Nobody was chosen.</p>{% endif %}
+  {% endif %}
+</div>
+
+<div class="card" id="volunteers">
+  <h3>Volunteers</h3>
+  <p class="muted">Shown in a different order for each person, so nobody gains by being first.</p>
+  {% if not volunteers %}<p class="muted">Nobody yet.</p>{% endif %}
+  {% for v in volunteers %}
+  <div class="volunteer">
+    <img src="{{ url_for('MemberPhoto', participant_id=v.participant_id) }}" alt="Photo of {{ v.person.name }}">
+    <div><strong>{{ v.person.name }}</strong>{% if v.person.town %} <span class="muted">· {{ v.person.town }}</span>{% endif %}
+      <p class="prewrap">{{ v.statement }}</p></div>
+  </div>
+  {% endfor %}
+  {% if election.phase == 'volunteering' and current_participant %}
+    {% if am_volunteer %}
+      <form method="post" action="{{ url_for('StewardWithdraw', election_id=election.id) }}"><p><input type="submit" class="secondary" value="Withdraw my name"></p></form>
+    {% elif can_volunteer %}
+      <form method="post" action="{{ url_for('StewardVolunteer', election_id=election.id) }}">
+        <label>Volunteer: a few words about why you're standing</label>
+        <textarea name="statement" required></textarea>
+        <p><input type="submit" value="Put my name forward"></p>
+      </form>
+    {% elif why_not %}<p class="muted">{{ why_not }}</p>{% endif %}
+  {% endif %}
+</div>
+
+{% if election.phase in ('rating', 'yesno') and is_member %}
+<div class="card" id="vote">
+  <h3>Your Vote{% if my_ballot %} <span class="muted">(Voting again replaces it)</span>{% endif %}</h3>
+  <form method="post" action="{{ url_for('StewardBallot', election_id=election.id) }}">
+    <table>
+      {% for v in volunteers %}
+      <tr><td>{{ v.person.name }}</td><td>
+        {% if election.phase == 'rating' %}
+          <select name="rank_{{ v.participant_id }}" aria-label="Your rating for {{ v.person.name }}">
+            <option value="">—</option>
+            {% for n in range(1, volunteers|length + 1) %}
+            <option value="{{ n }}" {% if my_ballot and v.participant_id in my_ballot.ranking and my_ballot.ranking.index(v.participant_id) + 1 == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          {% for answer in ['Yes', 'No'] %}
+          <label class="inline-choice"><input type="radio" name="answer_{{ v.participant_id }}" value="{{ answer }}" required {% if my_ballot and my_ballot.approvals.get(v.participant_id) == answer %}checked{% endif %}> {{ answer }}</label>
+          {% endfor %}
+        {% endif %}
+      </td></tr>
+      {% endfor %}
+    </table>
+    <label>What is your reason?</label>
+    <textarea name="reason" required>{{ my_ballot.reason if my_ballot else '' }}</textarea>
+    <p><input type="submit" value="Vote"> <span class="muted">Your Votes can keep this Steward Vote open {{ restarts_left }} more time{{ 's' if restarts_left != 1 }}.</span></p>
+  </form>
+</div>
+{% endif %}
+
+{% if tally %}
+<div class="card">
+  <h3>How the Votes stand</h3>
+  <table>
+    <tr><th>Volunteer</th><th>Yes</th><th>No</th><th></th></tr>
+    {% for pid, t in tally.items() %}<tr><td>{{ names.get(pid, participant_name(pid)) }}</td><td>{{ t.yes }}</td><td>{{ t.no }}</td><td>{% if t.passes %}<span class="badge passed">passing</span>{% endif %}</td></tr>{% endfor %}
+  </table>
+  {% if contactors is not none %}<p class="muted">{{ contactors }} Contactor{{ 's' if contactors != 1 }}.</p>{% endif %}
+</div>
+{% endif %}
+
+{% if election.phase == 'closed' and election.result.rounds %}
+<div class="card">
+  <h3>The count, round by round</h3>
+  {% for r in election.result.rounds %}
+  <p><strong>Round {{ loop.index }}</strong> ({{ r.counting }} ballot{{ 's' if r.counting != 1 }} counting):
+    {% for pid, n in r.counts.items() %}{{ names.get(pid, participant_name(pid)) }} {{ n }}{{ " · " if not loop.last }}{% endfor %}
+    {% if r.dropped %}— <em>{{ names.get(r.dropped, participant_name(r.dropped)) }} dropped</em>{% endif %}</p>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if ballots %}
+<div class="card">
+  <h3>Ballots</h3>
+  {% for b in ballots %}
+  <div class="comment">
+    <div class="meta">{{ b.person.name }} · {{ b.at|fmt }}</div>
+    <p>{% if b.ranking %}{% for pid in b.ranking %}{{ loop.index }}. {{ names.get(pid, participant_name(pid)) }}{{ " · " if not loop.last }}{% endfor %}{% else %}{% for pid, a in b.approvals.items() %}{{ names.get(pid, participant_name(pid)) }}: {{ a }}{{ " · " if not loop.last }}{% endfor %}{% endif %}</p>
+    <p class="prewrap">{{ b.reason }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card" id="discussion">
+  <h3>Discussion</h3>
+  {% if not comments %}<p class="muted">No Comments yet.</p>{% endif %}
+  {% for c in comments %}
+  <div class="comment"><div class="meta">{{ c.person.name }} · {{ c.at|fmt }}</div><p class="prewrap">{{ c.text }}</p></div>
+  {% endfor %}
+  {% if is_member and election.phase != 'closed' %}
+  <form method="post" action="{{ url_for('StewardComment', election_id=election.id) }}">
+    <label>Add a Comment or a question for the volunteers</label>
+    <textarea name="text" required></textarea>
+    <p><input type="submit" value="Post Comment"></p>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

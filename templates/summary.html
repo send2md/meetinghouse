@@ -25,6 +25,14 @@
 </div>
 {% endfor %}
 
+{% for e in open_steward_votes %}
+<div class="card notice">
+  <h3>Steward Vote</h3>
+  <p>{% if e.phase == 'volunteering' %}<strong>Volunteers wanted</strong>, until {{ e.volunteering_ends|day }}. Any Member who has never been a Steward can stand.{% else %}<strong>Voting now.</strong>{% endif %}
+    <a href="{{ url_for('StewardVote', election_id=e.id) }}">Go to the Steward Vote</a></p>
+</div>
+{% endfor %}
+
 <div class="card">
   <h3>Open Conversations</h3>
   {% if not summary.open %}<p class="muted">None.</p>{% endif %}

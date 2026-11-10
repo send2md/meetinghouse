@@ -9,6 +9,14 @@
   Threshold {{ rule.voter_fraction|pct }} · Approval {{ rule.approval_fraction|pct }} ·
   <a href="{{ url_for('CurrentRules') }}">all current Rules</a>
 </p>
+{% if subsection.value == "Rules" %}
+<div class="card">
+  <h3>Stewards</h3>
+  <p>{% if current_stewards %}Serving now: {% for st in current_stewards %}{{ participant_name(st.participant_id) }}{{ ", " if not loop.last }}{% endfor %}.{% else %}No Stewards yet.{% endif %}
+    {% for e in open_steward_votes %}<strong><a href="{{ url_for('StewardVote', election_id=e.id) }}">A Steward Vote is open{% if e.phase == 'volunteering' %}: volunteers wanted{% endif %}</a></strong>.{% endfor %}
+    <a href="{{ url_for('StewardsPage') }}">Stewards and Steward Votes</a></p>
+</div>
+{% endif %}
 <div class="card">
   {% if rows %}
     <table>
