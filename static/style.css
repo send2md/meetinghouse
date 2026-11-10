@@ -173,14 +173,18 @@ input[type=submit].danger { background: var(--no); }
 .same-person figure { margin: 0; text-align: center; }
 .same-person img { width: 220px; height: 220px; object-fit: cover; border-radius: 8px; border: 1px solid #d8d2c8; }
 .same-person p { flex-basis: 100%; }
-.tutorial { max-width: 820px; margin: 1rem auto; line-height: 1.6; }
+.tutorial { max-width: 880px; margin: 1rem auto; line-height: 1.6; font-size: 1.4rem; }
+.tutorial h1 { font-size: 2.6rem; }
+.tutorial h2 { font-size: 2rem; }
+.tutorial h3 { font-size: 1.6rem; }
 .tutorial h2 { margin-top: 2.25rem; padding-top: 0.5rem; border-top: 1px solid #e3ddd3; }
 .tutorial figure { margin: 1rem 0 1.5rem; }
 .tutorial figure img { width: 100%; height: auto; border: 1px solid #d8d2c8; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-.tutorial figcaption { font-size: 0.9rem; color: #6b645c; margin-top: 0.4rem; }
+.tutorial figcaption { font-size: 1.15rem; color: #6b645c; margin-top: 0.4rem; }
 .tutorial ol > li { margin-bottom: 0.6rem; }
 .tutorial .aside { background: #f3efe8; padding: 0.75rem 1rem; border-radius: 6px; }
 .tutorial-contents { background: #f3efe8; padding: 0.5rem 1.25rem; border-radius: 8px; margin: 1rem 0; }
 .tutorial-words dt { font-weight: 700; margin-top: 0.5rem; }
 .tutorial-words dd { margin: 0 0 0 1.25rem; }
-.tutorial figure.narrow { max-width: 420px; }
+.tutorial figure.narrow { max-width: 520px; }
+@media (max-width: 600px) { .tutorial { font-size: 1.2rem; } .tutorial h1 { font-size: 2rem; } .tutorial h2 { font-size: 1.6rem; } }
