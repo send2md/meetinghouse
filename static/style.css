@@ -8,6 +8,7 @@
   --no: #a33a3a;
   --abstain: #8a7a4a;
   --muted: #8a8271;
+  --bg: #faf6ee;
 }
 
 * { box-sizing: border-box; }
@@ -194,3 +195,25 @@ input[type=submit].danger { background: var(--no); }
 .volunteer { display: flex; gap: 1rem; align-items: flex-start; border-top: 1px solid var(--line); padding: 0.75rem 0; }
 .volunteer img { width: 96px; height: 96px; flex: none; }
 .inline-choice { display: inline-block; margin-right: 1rem; font-weight: normal; }
+
+/* Menus with a sub-menu (Committees, Groups, About) */
+header.site nav.tabs details.menu { position: relative; }
+header.site nav.tabs details.menu > summary {
+  list-style: none; cursor: pointer; padding: 0.45rem 0.8rem; border: 1px solid transparent; border-bottom: none;
+  border-radius: 6px 6px 0 0; color: var(--ink);
+}
+header.site nav.tabs details.menu > summary::-webkit-details-marker { display: none; }
+header.site nav.tabs details.menu > summary::after { content: " ▾"; font-size: 0.8em; color: var(--muted); }
+header.site nav.tabs details.menu > summary.active {
+  background: var(--bg); border-color: var(--line); color: var(--accent); font-weight: 600; position: relative; top: 1px;
+}
+header.site nav.tabs .submenu {
+  position: absolute; top: 100%; left: 0; z-index: 20; min-width: 15rem; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 0 6px 6px 6px; padding: 0.35rem 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+header.site nav.tabs .submenu a { border: none; border-radius: 0; padding: 0.5rem 1rem; white-space: nowrap; }
+header.site nav.tabs .submenu a.sub { padding-left: 2rem; font-size: 0.92em; }
+header.site nav.tabs .submenu a.active { background: #f3efe8; top: 0; }
+header.site nav.tabs .submenu a:hover { background: #f3efe8; }
+@media (max-width: 600px) { header.site nav.tabs .submenu { position: static; box-shadow: none; } }

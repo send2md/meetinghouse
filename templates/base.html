@@ -10,26 +10,42 @@
     <span class="brand">🕊 Meetinghouse</span>
     {% set ep = request.endpoint %}
     {% set committee = (request.view_args or {}).get('name') %}
-    <nav class="tabs">
+    <nav class="tabs" aria-label="Main menu">
       {% if current_participant %}
       <a href="{{ url_for('Dashboard') }}" class="{{ 'active' if ep == 'Dashboard' }}">Dashboard</a>
       {% else %}
       <a href="{{ url_for('LookAround') }}" class="{{ 'active' if ep == 'LookAround' }}">Look around</a>
       {% endif %}
-      <a href="{{ url_for('SubsectionView', name='forum') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'forum' }}">Forum Committee</a>
-      <a href="{{ url_for('SubsectionView', name='rules') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'rules' }}">Rules Committee</a>
-      <a href="{{ url_for('SubsectionView', name='jury') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'jury' }}">Jury Committee</a>
+      <details class="menu">
+        <summary class="{{ 'active' if ep in ('SubsectionView', 'CurrentRules', 'StewardsPage', 'StewardVote') }}">Committees</summary>
+        <div class="submenu">
+          <a href="{{ url_for('SubsectionView', name='forum') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'forum' }}">Forum</a>
+          <a href="{{ url_for('SubsectionView', name='rules') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'rules' }}">Rules</a>
+          <a href="{{ url_for('CurrentRules') }}" class="sub {{ 'active' if ep == 'CurrentRules' }}">Current Rules</a>
+          <a href="{{ url_for('StewardsPage') }}" class="sub {{ 'active' if ep in ('StewardsPage', 'StewardVote') }}">Stewards</a>
+          <a href="{{ url_for('SubsectionView', name='jury') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'jury' }}">Jury</a>
+        </div>
+      </details>
+      <details class="menu">
+        <summary class="{{ 'active' if ep in ('GroupsPage', 'SplitPage', 'MemberMap') }}">Groups</summary>
+        <div class="submenu">
+          <a href="{{ url_for('GroupsPage') }}" class="{{ 'active' if ep in ('GroupsPage', 'SplitPage') }}">Groups</a>
+          <a href="{{ url_for('MemberMap') }}" class="sub {{ 'active' if ep == 'MemberMap' }}">Map</a>
+        </div>
+      </details>
       <a href="{{ url_for('Archive') }}" class="{{ 'active' if ep == 'Archive' }}">Archive</a>
-      {% if current_participant %}
-      <a href="{{ url_for('Summary') }}" class="{{ 'active' if ep == 'Summary' }}">Daily Summary</a>
-      {% endif %}
-      <a href="{{ url_for('CurrentRules') }}" class="{{ 'active' if ep == 'CurrentRules' }}">Current Rules</a>
-      <a href="{{ url_for('MemberMap') }}" class="{{ 'active' if ep == 'MemberMap' }}">Map</a>
-      <a href="{{ url_for('GroupsPage') }}" class="{{ 'active' if ep in ('GroupsPage', 'SplitPage') }}">Groups</a>
       <a href="{{ url_for('PublicLog') }}" class="{{ 'active' if ep == 'PublicLog' }}">Log</a>
       {% if current_participant %}
+      <a href="{{ url_for('Summary') }}" class="{{ 'active' if ep == 'Summary' }}">Daily Summary</a>
       <a href="{{ url_for('Account') }}" class="{{ 'active' if ep == 'Account' }}">Account</a>
       {% endif %}
+      <details class="menu">
+        <summary class="{{ 'active' if ep in ('Tutorial', 'Design', 'AboutTheArt') }}">About</summary>
+        <div class="submenu">
+          <a href="{{ url_for('Tutorial') }}" class="{{ 'active' if ep == 'Tutorial' }}">How to use Meetinghouse</a>
+          <a href="{{ url_for('Design') }}" class="{{ 'active' if ep == 'Design' }}">How Meetinghouse works</a>
+        </div>
+      </details>
     </nav>
     <span class="account-box">
     {% if current_participant %}
@@ -53,5 +69,27 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+<script>
+  // Menus: open on hover with a mouse, on tap otherwise; only one open at a time; close on a click elsewhere.
+  (function () {
+    var menus = Array.prototype.slice.call(document.querySelectorAll("details.menu"));
+    var hover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
+    menus.forEach(function (menu) {
+      menu.addEventListener("toggle", function () {
+        if (menu.open) menus.forEach(function (other) { if (other !== menu) other.open = false; });
+      });
+      if (hover) {
+        menu.addEventListener("mouseenter", function () { menu.open = true; });
+        menu.addEventListener("mouseleave", function () { menu.open = false; });
+      }
+    });
+    document.addEventListener("click", function (event) {
+      menus.forEach(function (menu) { if (!menu.contains(event.target)) menu.open = false; });
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") menus.forEach(function (menu) { menu.open = false; });
+    });
+  })();
+</script>
 </body>
 </html>
