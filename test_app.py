@@ -221,3 +221,13 @@ def test_tutorial_is_public_and_linked_from_the_front_page(client):
     text = page.data.decode()
     assert "How to use Meetinghouse" in text and "tutorial/votes.png" in text
     assert test_client.get("/static/tutorial/votes.png").status_code == 200
+
+
+def test_welcome_page_first_then_just_log_in(client):
+    test_client, _ = client
+    first = test_client.get("/").data.decode()
+    assert "Just look around?" in first and "meetinghouse-sketch.png" in first
+    again = test_client.get("/").data.decode()
+    assert "Log in" in again and "Just look around?" not in again and "meetinghouse-sketch.png" not in again
+    assert "<title>Log in — Meetinghouse</title>" in again
+    assert "Just look around?" in test_client.get("/welcome").data.decode()

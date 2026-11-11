@@ -18,7 +18,7 @@ import sqlite3
 import threading
 import time
 
-from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, flash, g, jsonify, make_response, redirect, render_template, request, send_file, session, url_for
 from webauthn import (
     generate_authentication_options,
     generate_registration_options,
@@ -223,7 +223,11 @@ def Dashboard():
     for a logged-out visitor, not a bounce through one.
     """
     if g.participant is None:
-        return render_template("front.html")
+        # The welcome page (the drawing, OR, Just look around?) the first time;
+        # after that, just the Log in box.
+        if request.cookies.get(WELCOMED_COOKIE) == "1":
+            return render_template("login.html")
+        return _Welcome()
     now = Now()
     return render_template(
         "dashboard.html",
@@ -237,6 +241,24 @@ def Dashboard():
         steward_thanks_text=stewards.THANK_YOU,
         open_steward_votes=stewards.OpenElections(conn),
     )
+
+
+WELCOMED_COOKIE = "mh_welcomed"
+
+
+def _Welcome():
+    response = make_response(render_template("front.html"))
+    response.set_cookie(
+        WELCOMED_COOKIE, "1", max_age=10 * 365 * 24 * 3600, httponly=True, samesite="Lax",
+        secure=app.config["SESSION_COOKIE_SECURE"],
+    )
+    return response
+
+
+@app.route("/welcome")
+def Welcome():
+    """The welcome page, any time."""
+    return _Welcome()
 
 
 def _OpenByCommittee(now):
