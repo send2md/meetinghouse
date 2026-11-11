@@ -15,6 +15,8 @@
 <li><a href="#closing">How a Conversation closes</a></li>
 <li><a href="#start">Starting a Conversation</a></li>
 <li><a href="#rules-jury">The Rules and Jury Committees</a></li>
+<li><a href="#groups">Groups, and splitting a group</a></li>
+<li><a href="#stewards">Stewards</a></li>
 <li><a href="#watch">Keeping watch</a></li>
 <li><a href="#account">Your account</a></li>
 <li><a href="#words">The words we use</a></li>
@@ -97,14 +99,37 @@
 <figure><img src="{{ url_for('static', filename='tutorial/new-jury.png') }}" alt="The form to start a Jury Conversation about a Member"><figcaption>Starting a Jury Conversation. Say clearly what happened and where.</figcaption></figure>
 <p>While someone is dismissed, they can't log in, and their Comments and Votes are hidden. Their Votes come off every open Conversation, and each one's Seasoning Time starts over so everyone can see the change. When the time is up, they come back on their own.</p>
 
-<h2 id="watch">7. Keeping watch</h2>
+<h2 id="groups">7. Groups, and splitting a group</h2>
+<p>At first, everyone is in one group: <strong>Group A</strong>, the whole Meetinghouse. When a group feels too big for its Members to know each other, it can split in two, by where people live. When A splits, its halves are <strong>AA</strong> and <strong>AB</strong>; when AA splits, AAA and AAB, and so on. You belong to your own group and every group above it, so a Member of AA is also a Member of A.</p>
+<figure><img src="{{ url_for('static', filename='tutorial/groups.png') }}" alt="The Groups page, listing each group and how many Members it has"><figcaption>The Groups tab: every group, and how many Members it has.</figcaption></figure>
+<p><strong>How a group splits:</strong></p>
+<ol>
+<li><strong>Deciding.</strong> In a group with at least 30 Members, any of them can propose splitting it, on the Groups tab. That starts a Rules Conversation, “Should Group A split?”, with an ordinary Yes-or-No Vote among the group's Members. While it's being decided, the map of where Members live is frozen.</li>
+<li><strong>Suggesting.</strong> If it passes, the site draws a circle around each town or cluster of Members, and suggests two ways to put the circles into two halves. Any Member of the group can suggest another way, by ticking which circles go in one half. Each half needs between 40% and 60% of the Members, its circles next to each other, and to reach the edge of the group's area. The site checks each suggestion at once and says if something's wrong.</li>
+<li><strong>Rating.</strong> Then everyone in the group rates the ways: 1 for their first choice, 2 for their second, and so on, each with a reason. The way more than half prefer wins. If none has more than half at first, the way with the fewest first choices is dropped and those ballots count for their next choice, until one way has more than half.</li>
+<li><strong>Done.</strong> Each Member is placed in the half they live in. New Members are placed automatically.</li>
+</ol>
+<p><strong>After a split,</strong> when you start a Forum or Jury Conversation, the site asks which of your groups it's for, and only that group's Members can take part. Choose the smallest group the matter concerns. The Rules stay the same for everyone, decided by all of Group A. If a Conversation is in the wrong group, its Contactors can flag it during its first week, and its Initiator can move it.</p>
+
+<h2 id="stewards">8. Stewards</h2>
+<p>Three <strong>Stewards</strong> keep the lights on: they pay for the hosting and the meetinghouse.ai name, and keep the server running. They have no other powers. A Stewardship lasts one year, nobody can be a Steward twice, and a new Steward is chosen every four months, so there are always two who already know the job.</p>
+<p>The site runs each <strong>Steward Vote</strong> by itself, in the Rules Committee:</p>
+<ol>
+<li><strong>Volunteers.</strong> For 3 weeks, any Member who has never been a Steward can put their name forward, with a few words about why. Everyone can comment and ask the volunteers questions.</li>
+<li><strong>The Vote.</strong> If more people stand than there are places, everyone rates them, 1 for their first choice and so on, the same way as choosing how to split. If no more stand than there are places, it's a Yes-or-No Vote on each. Every ballot shows with its reason.</li>
+<li><strong>Thank you.</strong> Each volunteer who isn't chosen gets a thank-you note, once, with a box to tick if they'd like to stand again next time.</li>
+</ol>
+<figure><img src="{{ url_for('static', filename='tutorial/steward-vote.png') }}" alt="A Steward Vote, with the volunteers and the form to rate them"><figcaption>A Steward Vote: each volunteer with their photo, town and a few words. Everyone sees the volunteers in a different order, so nobody gains by being first.</figcaption></figure>
+<p>The first Steward Vote opens a year after Meetinghouse opens to Members. You can find the Stewards, and every Steward Vote, from the Rules Committee page.</p>
+
+<h2 id="watch">9. Keeping watch</h2>
 <p><strong>The Daily Summary</strong> shows, in one place, every open Conversation and how its Votes stand, what closed today, and anyone dismissed today.</p>
 <figure><img src="{{ url_for('static', filename='tutorial/summary.png') }}" alt="The Daily Summary"><figcaption>The Daily Summary, with today's log fingerprint at the top.</figcaption></figure>
 <p><strong>The Log</strong> records everything the site does: Members joining and leaving, Conversations, Votes, results, Rules changes, Dismissals, and which version of the software is running. Nothing is ever taken out. Each day has a <strong>fingerprint</strong>: a long code that depends on everything logged so far. If anyone ever changed an old entry, the fingerprints would stop matching, and the Log page would say so.</p>
 <figure><img src="{{ url_for('static', filename='tutorial/log.png') }}" alt="The public Log, with today's fingerprint"><figcaption>The public Log.</figcaption></figure>
 <p><strong>The Map</strong> shows roughly where Members live: each as part of a square about 5 km across, with the town's name. No names, and no addresses.</p>
 
-<h2 id="account">8. Your account</h2>
+<h2 id="account">10. Your account</h2>
 <p>The <strong>Account</strong> tab is where you:</p>
 <ul>
 <li>see when your yearly selfie is due;</li>
@@ -116,7 +141,7 @@
 <p>Every time you log in, the site tells you when you last logged in. If that wasn't you, use account recovery.</p>
 <p><strong>Leaving.</strong> You can leave at any time, from the bottom of your Account page. Your Comments and Votes come off every open Conversation; your Comments and Votes in closed Conversations stay on the record under your name, with a plain “left Meetinghouse” picture instead of your photo. Your email address, photo and passkeys are deleted. You're welcome back any time, by joining again.</p>
 
-<h2 id="words">9. The words we use</h2>
+<h2 id="words">11. The words we use</h2>
 <dl class="tutorial-words">
 <dt>Member</dt><dd>Someone who has joined.</dd>
 <dt>Committee</dt><dd>The Forum, Rules or Jury Committee.</dd>
@@ -130,6 +155,8 @@
 <dt>Minimum Life</dt><dd>At least 3 weeks: how long a Question stays open.</dd>
 <dt>Seasoning Time</dt><dd>3 weeks without anything new before a Conversation closes.</dd>
 <dt>Dismissal</dt><dd>A Member's time away, decided by the Jury.</dd>
+<dt>Group</dt><dd>Group A is all of Meetinghouse; after a split, AA and AB are its halves, and so on.</dd>
+<dt>Steward</dt><dd>One of the three Members, chosen by Vote for a year, who pay the bills and keep the server running.</dd>
 </dl>
 <p>For the full design, and the reasons behind it, see <a href="{{ url_for('Design') }}">How Meetinghouse works</a>.</p>
 </article>
