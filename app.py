@@ -1870,6 +1870,10 @@ def _DescribeLogEntry(entry, now):
         text = f"{who} flagged {title} as being in the wrong group"
     elif kind == "topic_moved":
         text = f"{title} moved from Group {d.get('from_group')} to Group {d.get('to_group')}"
+    elif kind == "software_installed":
+        text = f"The server installed the approved software version {d.get('ref', '')[:12]}"
+    elif kind == "software_install_failed":
+        text = f"The approved software version {d.get('ref', '')[:12]} was not installed. {d.get('reason', '')}"
     elif kind == "member_left":
         text = f"{who} left Meetinghouse"
     elif kind == "member_joined":
