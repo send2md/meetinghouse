@@ -196,28 +196,32 @@ input[type=submit].danger { background: var(--no); }
 .volunteer img { width: 96px; height: 96px; flex: none; }
 .inline-choice { display: inline-block; margin-right: 1rem; font-weight: normal; }
 
-/* Menus with a sub-menu (Committees, Groups, About) */
-header.site nav.tabs details.menu { position: relative; }
-header.site nav.tabs details.menu > summary {
-  list-style: none; cursor: pointer; padding: 0.45rem 0.8rem; border: 1px solid transparent; border-bottom: none;
-  border-radius: 6px 6px 0 0; color: var(--ink);
+/* Menus with a list (About, Committees, Groups) */
+header.site nav.tabs .menu { position: relative; }
+header.site nav.tabs .menu-name {
+  background: none; color: var(--ink); font: inherit; cursor: pointer; padding: 0.45rem 0.8rem;
+  border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0;
 }
-header.site nav.tabs details.menu > summary::-webkit-details-marker { display: none; }
-header.site nav.tabs details.menu > summary::after { content: " ▾"; font-size: 0.8em; color: var(--muted); }
-header.site nav.tabs details.menu > summary.active {
+header.site nav.tabs .menu-name::after { content: " ▾"; font-size: 0.8em; color: var(--muted); }
+header.site nav.tabs .menu-name.active {
   background: var(--bg); border-color: var(--line); color: var(--accent); font-weight: 600; position: relative; top: 1px;
 }
 header.site nav.tabs .submenu {
-  position: absolute; top: 100%; left: 0; z-index: 20; min-width: 15rem; display: flex; flex-direction: column;
+  display: none; position: absolute; top: 100%; left: 0; z-index: 50; min-width: 15rem; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line); border-radius: 0 6px 6px 6px; padding: 0.35rem 0;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+header.site nav.tabs .menu.open > .submenu { display: flex; }
+header.site nav.tabs .menu.open { z-index: 60; }
+@media (hover: hover) {
+  header.site nav.tabs .menu:hover > .submenu { display: flex; }
+  header.site nav.tabs .menu:hover { z-index: 60; }
 }
 header.site nav.tabs .submenu a { border: none; border-radius: 0; padding: 0.5rem 1rem; white-space: nowrap; }
 header.site nav.tabs .submenu a.sub { padding-left: 2rem; font-size: 0.92em; }
 header.site nav.tabs .submenu a.active { background: #f3efe8; top: 0; }
 header.site nav.tabs .submenu a:hover { background: #f3efe8; }
-@media (max-width: 600px) { header.site nav.tabs .submenu { position: static; box-shadow: none; } }
-header.site nav.tabs details.menu:not([open]) > .submenu { display: none; }
+@media (max-width: 600px) { header.site nav.tabs .submenu { position: absolute; min-width: 13rem; } }
 
 /* Phones: keep every page within the screen. Wide tables scroll sideways inside their own box. */
 @media (max-width: 600px) {

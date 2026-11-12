@@ -15,8 +15,8 @@
       {% if current_participant %}
       <a href="{{ url_for('Dashboard') }}" class="{{ 'active' if ep == 'Dashboard' }}">Dashboard</a>
       {% endif %}
-      <details class="menu">
-        <summary class="{{ 'active' if ep in ('LookAround', 'Tutorial', 'Design', 'AboutTheArt') }}">About</summary>
+      <div class="menu">
+        <button type="button" class="menu-name {{ 'active' if ep in ('LookAround', 'Tutorial', 'Design', 'AboutTheArt') }}" aria-expanded="false">About</button>
         <div class="submenu">
           {% if not current_participant %}
           <a href="{{ url_for('LookAround') }}" class="{{ 'active' if ep == 'LookAround' }}">Look around</a>
@@ -24,9 +24,9 @@
           <a href="{{ url_for('Tutorial') }}" class="{{ 'active' if ep == 'Tutorial' }}">How to use Meetinghouse</a>
           <a href="{{ url_for('Design') }}" class="{{ 'active' if ep == 'Design' }}">How Meetinghouse works</a>
         </div>
-      </details>
-      <details class="menu">
-        <summary class="{{ 'active' if ep in ('SubsectionView', 'CurrentRules', 'StewardsPage', 'StewardVote') }}">Committees</summary>
+      </div>
+      <div class="menu">
+        <button type="button" class="menu-name {{ 'active' if ep in ('SubsectionView', 'CurrentRules', 'StewardsPage', 'StewardVote') }}" aria-expanded="false">Committees</button>
         <div class="submenu">
           <a href="{{ url_for('SubsectionView', name='forum') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'forum' }}">Forum</a>
           <a href="{{ url_for('SubsectionView', name='rules') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'rules' }}">Rules</a>
@@ -34,14 +34,14 @@
           <a href="{{ url_for('StewardsPage') }}" class="sub {{ 'active' if ep in ('StewardsPage', 'StewardVote') }}">Stewards</a>
           <a href="{{ url_for('SubsectionView', name='jury') }}" class="{{ 'active' if ep == 'SubsectionView' and committee == 'jury' }}">Jury</a>
         </div>
-      </details>
-      <details class="menu">
-        <summary class="{{ 'active' if ep in ('GroupsPage', 'SplitPage', 'MemberMap') }}">Groups</summary>
+      </div>
+      <div class="menu">
+        <button type="button" class="menu-name {{ 'active' if ep in ('GroupsPage', 'SplitPage', 'MemberMap') }}" aria-expanded="false">Groups</button>
         <div class="submenu">
           <a href="{{ url_for('GroupsPage') }}" class="{{ 'active' if ep in ('GroupsPage', 'SplitPage') }}">Groups</a>
           <a href="{{ url_for('MemberMap') }}" class="sub {{ 'active' if ep == 'MemberMap' }}">Map</a>
         </div>
-      </details>
+      </div>
       <a href="{{ url_for('Archive') }}" class="{{ 'active' if ep == 'Archive' }}">Archive</a>
       <a href="{{ url_for('PublicLog') }}" class="{{ 'active' if ep == 'PublicLog' }}">Log</a>
       {% if current_participant %}
@@ -72,31 +72,33 @@
     {% block content %}{% endblock %}
   </main>
 <script>
-  // Menus: open on hover with a mouse, on tap otherwise; only one open at a time; close on a click elsewhere.
+  // Menus. With a mouse, pointing at a menu shows its list (that part needs no script at all).
+  // Clicking or tapping a menu's name opens it; only one is ever open; a click elsewhere or Escape closes it.
   (function () {
-    var menus = Array.prototype.slice.call(document.querySelectorAll("details.menu"));
-    var hover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
-    menus.forEach(function (menu) {
-      menu.addEventListener("toggle", function () {
-        if (menu.open) menus.forEach(function (other) { if (other !== menu) other.open = false; });
+    var menus = Array.prototype.slice.call(document.querySelectorAll("nav .menu"));
+    function CloseAll(except) {
+      menus.forEach(function (menu) {
+        if (menu !== except) {
+          menu.classList.remove("open");
+          menu.querySelector(".menu-name").setAttribute("aria-expanded", "false");
+        }
       });
-      if (hover) {
-        var timer = null;
-        menu.addEventListener("mouseenter", function () { clearTimeout(timer); menu.open = true; });
-        // A short pause before closing, so a slightly crooked path down to the list doesn't close it.
-        menu.addEventListener("mouseleave", function () { timer = setTimeout(function () { menu.open = false; }, 250); });
-        // Pointing already opened it: a click on the name keeps it open instead of closing it again.
-        menu.querySelector("summary").addEventListener("click", function (event) {
-          if (menu.open) event.preventDefault();
-        });
-      }
+    }
+    menus.forEach(function (menu) {
+      var name = menu.querySelector(".menu-name");
+      name.addEventListener("click", function (event) {
+        event.stopPropagation();
+        var opening = !menu.classList.contains("open") || window.matchMedia("(hover: hover)").matches;
+        CloseAll(menu);
+        menu.classList.toggle("open", opening);
+        name.setAttribute("aria-expanded", opening ? "true" : "false");
+      });
+      menu.addEventListener("mouseenter", function () { CloseAll(menu); });
     });
     document.addEventListener("click", function (event) {
-      menus.forEach(function (menu) { if (!menu.contains(event.target)) menu.open = false; });
+      if (!event.target.closest || !event.target.closest("nav .menu")) CloseAll(null);
     });
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") menus.forEach(function (menu) { menu.open = false; });
-    });
+    document.addEventListener("keydown", function (event) { if (event.key === "Escape") CloseAll(null); });
   })();
 </script>
 </body>
