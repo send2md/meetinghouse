@@ -14,9 +14,17 @@
     <nav class="tabs" aria-label="Main menu">
       {% if current_participant %}
       <a href="{{ url_for('Dashboard') }}" class="{{ 'active' if ep == 'Dashboard' }}">Dashboard</a>
-      {% else %}
-      <a href="{{ url_for('LookAround') }}" class="{{ 'active' if ep == 'LookAround' }}">Look around</a>
       {% endif %}
+      <details class="menu">
+        <summary class="{{ 'active' if ep in ('LookAround', 'Tutorial', 'Design', 'AboutTheArt') }}">About</summary>
+        <div class="submenu">
+          {% if not current_participant %}
+          <a href="{{ url_for('LookAround') }}" class="{{ 'active' if ep == 'LookAround' }}">Look around</a>
+          {% endif %}
+          <a href="{{ url_for('Tutorial') }}" class="{{ 'active' if ep == 'Tutorial' }}">How to use Meetinghouse</a>
+          <a href="{{ url_for('Design') }}" class="{{ 'active' if ep == 'Design' }}">How Meetinghouse works</a>
+        </div>
+      </details>
       <details class="menu">
         <summary class="{{ 'active' if ep in ('SubsectionView', 'CurrentRules', 'StewardsPage', 'StewardVote') }}">Committees</summary>
         <div class="submenu">
@@ -40,13 +48,6 @@
       <a href="{{ url_for('Summary') }}" class="{{ 'active' if ep == 'Summary' }}">Daily Summary</a>
       <a href="{{ url_for('Account') }}" class="{{ 'active' if ep == 'Account' }}">Account</a>
       {% endif %}
-      <details class="menu">
-        <summary class="{{ 'active' if ep in ('Tutorial', 'Design', 'AboutTheArt') }}">About</summary>
-        <div class="submenu">
-          <a href="{{ url_for('Tutorial') }}" class="{{ 'active' if ep == 'Tutorial' }}">How to use Meetinghouse</a>
-          <a href="{{ url_for('Design') }}" class="{{ 'active' if ep == 'Design' }}">How Meetinghouse works</a>
-        </div>
-      </details>
     </nav>
     <span class="account-box">
     {% if current_participant %}

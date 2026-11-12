@@ -218,3 +218,14 @@ header.site nav.tabs .submenu a.active { background: #f3efe8; top: 0; }
 header.site nav.tabs .submenu a:hover { background: #f3efe8; }
 @media (max-width: 600px) { header.site nav.tabs .submenu { position: static; box-shadow: none; } }
 header.site nav.tabs details.menu:not([open]) > .submenu { display: none; }
+
+/* Phones: keep every page within the screen. Wide tables scroll sideways inside their own box. */
+@media (max-width: 600px) {
+  main { padding: 0.75rem; }
+  header.site { padding: 0.5rem 0.75rem; }
+  .card { padding: 0.75rem 0.85rem; }
+  table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: 0.9rem; }
+  th, td { padding: 0.35rem 0.4rem; }
+  code, .hash { word-break: break-all; }
+  img { max-width: 100%; height: auto; }
+}
