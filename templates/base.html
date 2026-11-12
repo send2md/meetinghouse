@@ -81,8 +81,14 @@
         if (menu.open) menus.forEach(function (other) { if (other !== menu) other.open = false; });
       });
       if (hover) {
-        menu.addEventListener("mouseenter", function () { menu.open = true; });
-        menu.addEventListener("mouseleave", function () { menu.open = false; });
+        var timer = null;
+        menu.addEventListener("mouseenter", function () { clearTimeout(timer); menu.open = true; });
+        // A short pause before closing, so a slightly crooked path down to the list doesn't close it.
+        menu.addEventListener("mouseleave", function () { timer = setTimeout(function () { menu.open = false; }, 250); });
+        // Pointing already opened it: a click on the name keeps it open instead of closing it again.
+        menu.querySelector("summary").addEventListener("click", function (event) {
+          if (menu.open) event.preventDefault();
+        });
       }
     });
     document.addEventListener("click", function (event) {
